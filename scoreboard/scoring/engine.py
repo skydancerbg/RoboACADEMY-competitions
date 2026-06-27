@@ -264,3 +264,59 @@ def push_competition_update(competition_id):
 
 # Keep old name as alias so existing callers (signals) still work
 _update_best_result = _update_best_timed_result
+
+
+# ── Phase 5.10: MQTT fallback helpers ─────────────────────────────────────────
+
+def void_active_runs_on_disconnect():
+    """
+    Void every ACTIVE run when the MQTT broker disconnects.
+    Called from the mqtt_bridge on_disconnect callback.
+    Returns the count of runs voided.
+    """
+    active_runs = list(Run.objects.filter(state=RunState.ACTIVE).select_related('competition'))
+    count = 0
+    for run in active_runs:
+        run.state = RunState.VOIDED
+        run.save(update_fields=['state'])
+        push_competition_update(run.competition_id)
+        count += 1
+    return count
+
+
+def record_manual_result(run, time_ms=None, score=None, comment=''):
+    """
+    Record a manually-entered result on a VOIDED run (MQTT-fallback path).
+
+    For TIMED competitions: pass time_ms (positive int, milliseconds).
+    For JUDGED competitions: pass score (int, 1-100).
+    Raises ValueError on invalid input or wrong run state.
+    Returns the upserted Result.
+    """
+    if run.state != RunState.VOIDED:
+        raise ValueError(f'manual_result only allowed on VOIDED runs (run is {run.state})')
+
+    if run.competition.competition_type == CompetitionType.TIMED:
+        if time_ms is None:
+            raise ValueError('time_ms is required for TIMED runs')
+        time_ms = int(time_ms)
+        if time_ms <= 0:
+            raise ValueError('time_ms must be a positive integer')
+        score_value = time_ms
+    else:
+        if score is None:
+            raise ValueError('score is required for JUDGED runs')
+        score = int(score)
+        if not (1 <= score <= 100):
+            raise ValueError('score must be between 1 and 100')
+        score_value = score
+
+    result, _ = Result.objects.update_or_create(
+        team=run.team,
+        competition=run.competition,
+        defaults={'score': score_value, 'comment': comment, 'is_manual': True},
+    )
+
+    _update_overall_ranking(run.competition)
+    push_competition_update(run.competition_id)
+    return result

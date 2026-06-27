@@ -222,6 +222,37 @@ def run_score(request, run_id):
     return redirect('contest:competition_board', competition_id=run.competition.id)
 
 
+
+
+@require_POST
+def manual_entry(request, run_id):
+    """Submit a manually-measured result for a VOIDED run (MQTT fallback path)."""
+    run = get_object_or_404(Run.objects.select_related('competition'), pk=run_id)
+
+    if run.state != RunState.VOIDED:
+        return JsonResponse({'error': f'Run is {run.state}, manual entry requires VOIDED state'}, status=400)
+
+    comment = request.POST.get('comment', '').strip()[:200]
+
+    from scoring.engine import record_manual_result
+
+    try:
+        if run.competition.competition_type == CompetitionType.TIMED:
+            raw = request.POST.get('manual_time_ms', '').strip()
+            if not raw:
+                return JsonResponse({'error': 'manual_time_ms is required for TIMED runs'}, status=400)
+            record_manual_result(run, time_ms=int(raw), comment=comment)
+        else:
+            raw = request.POST.get('score', '').strip()
+            if not raw:
+                return JsonResponse({'error': 'score is required for JUDGED runs'}, status=400)
+            record_manual_result(run, score=int(raw), comment=comment)
+    except (ValueError, TypeError) as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+
+    return redirect('contest:competition_board', competition_id=run.competition_id)
+
+
 # ── Legacy robot API ───────────────────────────────────────────────────────────
 
 def robot_action(request):

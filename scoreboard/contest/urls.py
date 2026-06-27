@@ -15,5 +15,6 @@ urlpatterns = [
     path('run/<int:run_id>/start', views.run_start, name='run_start'),
     path('run/<int:run_id>/stop', views.run_stop, name='run_stop'),
     path('run/<int:run_id>/score', views.run_score, name='run_score'),
+    path('run/<int:run_id>/manual_entry', views.manual_entry, name='run_manual_entry'),
     path('robot_action', views.robot_action),
 ]

@@ -77,6 +77,13 @@ def on_connect(client, userdata, connect_flags, reason_code, properties):
 
 def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
     logger.warning('Disconnected from broker, reason_code=%s', reason_code)
+    try:
+        from scoring.engine import void_active_runs_on_disconnect
+        voided = void_active_runs_on_disconnect()
+        if voided:
+            logger.warning('MQTT disconnect: auto-voided %s active run(s)', voided)
+    except Exception:
+        logger.exception('Error voiding runs on disconnect')
 
 
 def on_message(client, userdata, msg):

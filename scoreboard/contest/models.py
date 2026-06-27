@@ -105,6 +105,8 @@ class Result(models.Model):
     team        = models.ForeignKey(Team, on_delete=models.CASCADE)
     competition = models.ForeignKey(Competition, on_delete=models.CASCADE)
 
+    is_manual = models.BooleanField(default=False, help_text='True if recorded manually via MQTT-fallback path.')
+
     class Meta:
         unique_together = (('team', 'competition'),)
 

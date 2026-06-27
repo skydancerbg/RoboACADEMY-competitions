@@ -926,3 +926,223 @@ class AutoTimeoutTest(TestCase):
         run2.refresh_from_db()
         self.assertEqual(run1.state, RunState.VOIDED)
         self.assertEqual(run2.state, RunState.ACTIVE)
+
+# ── Phase 5.10: MQTT Fallback / Manual Mode tests ─────────────────────────────
+
+import secrets as _secrets
+
+from django.test import TestCase
+from django.utils import timezone
+
+from contest.models import Competition, CompetitionType, Contest, Result, Run, RunState, Team
+from devices.models import LapTimerDevice
+from scoring.engine import record_manual_result, void_active_runs_on_disconnect
+
+
+def _make_device(mac='AA:BB:CC:DD:EE:F0'):
+    d, _ = LapTimerDevice.objects.get_or_create(device_id=mac, defaults={'friendly_name': mac})
+    return d
+
+
+def _contest():
+    return Contest.objects.create(name='Fallback Cup')
+
+
+def _comp(contest, name='LF', ctype=CompetitionType.TIMED):
+    return Competition.objects.create(
+        name=name, contest=contest,
+        competition_type=ctype,
+        token=_secrets.token_hex(8),
+    )
+
+
+def _team(contest, name='Alpha'):
+    return Team.objects.create(name=name, contest=contest, token=None)
+
+
+def _run(team, comp, state=RunState.ACTIVE):
+    return Run.objects.create(
+        team=team, competition=comp,
+        start_time=timezone.now(), duration=0, state=state,
+    )
+
+
+class VoidOnDisconnectTest(TestCase):
+    """void_active_runs_on_disconnect voids all ACTIVE runs regardless of type."""
+
+    def setUp(self):
+        self.contest = _contest()
+        self.comp = _comp(self.contest)
+        self.team = _team(self.contest)
+
+    def test_voids_active_run(self):
+        run = _run(self.team, self.comp, state=RunState.ACTIVE)
+        void_active_runs_on_disconnect()
+        run.refresh_from_db()
+        self.assertEqual(run.state, RunState.VOIDED)
+
+    def test_returns_count_of_voided_runs(self):
+        _run(self.team, self.comp, state=RunState.ACTIVE)
+        team2 = _team(self.contest, 'Bravo')
+        comp2 = _comp(self.contest, 'Arm', CompetitionType.JUDGED)
+        _run(team2, comp2, state=RunState.ACTIVE)
+        count = void_active_runs_on_disconnect()
+        self.assertEqual(count, 2)
+
+    def test_returns_zero_when_no_active_runs(self):
+        _run(self.team, self.comp, state=RunState.PENDING)
+        count = void_active_runs_on_disconnect()
+        self.assertEqual(count, 0)
+
+    def test_completed_run_not_voided(self):
+        run = _run(self.team, self.comp, state=RunState.COMPLETED)
+        void_active_runs_on_disconnect()
+        run.refresh_from_db()
+        self.assertEqual(run.state, RunState.COMPLETED)
+
+    def test_pending_run_not_voided(self):
+        run = _run(self.team, self.comp, state=RunState.PENDING)
+        void_active_runs_on_disconnect()
+        run.refresh_from_db()
+        self.assertEqual(run.state, RunState.PENDING)
+
+
+class RecordManualResultTest(TestCase):
+    """record_manual_result stores result on VOIDED runs correctly."""
+
+    def setUp(self):
+        self.contest = _contest()
+        self.timed_comp = _comp(self.contest, 'LF', CompetitionType.TIMED)
+        self.judged_comp = _comp(self.contest, 'Arm', CompetitionType.JUDGED)
+        self.team = _team(self.contest)
+
+    def _voided_run(self, comp):
+        return _run(self.team, comp, state=RunState.VOIDED)
+
+    def test_timed_manual_result_creates_result(self):
+        run = self._voided_run(self.timed_comp)
+        record_manual_result(run, time_ms=12500)
+        self.assertTrue(Result.objects.filter(team=self.team, competition=self.timed_comp).exists())
+
+    def test_judged_manual_result_creates_result(self):
+        run = self._voided_run(self.judged_comp)
+        record_manual_result(run, score=75)
+        self.assertTrue(Result.objects.filter(team=self.team, competition=self.judged_comp).exists())
+
+    def test_timed_stores_correct_time(self):
+        run = self._voided_run(self.timed_comp)
+        record_manual_result(run, time_ms=8000)
+        r = Result.objects.get(team=self.team, competition=self.timed_comp)
+        self.assertEqual(r.score, 8000)
+
+    def test_judged_stores_correct_score(self):
+        run = self._voided_run(self.judged_comp)
+        record_manual_result(run, score=88)
+        r = Result.objects.get(team=self.team, competition=self.judged_comp)
+        self.assertEqual(r.score, 88)
+
+    def test_result_marked_as_manual(self):
+        run = self._voided_run(self.timed_comp)
+        result = record_manual_result(run, time_ms=5000)
+        self.assertTrue(result.is_manual)
+
+    def test_non_voided_run_raises_value_error(self):
+        run = _run(self.team, self.timed_comp, state=RunState.COMPLETED)
+        with self.assertRaises(ValueError):
+            record_manual_result(run, time_ms=5000)
+
+    def test_timed_missing_time_ms_raises(self):
+        run = self._voided_run(self.timed_comp)
+        with self.assertRaises(ValueError):
+            record_manual_result(run, score=50)
+
+    def test_judged_missing_score_raises(self):
+        run = self._voided_run(self.judged_comp)
+        with self.assertRaises(ValueError):
+            record_manual_result(run, time_ms=5000)
+
+    def test_judged_score_out_of_range_raises(self):
+        run = self._voided_run(self.judged_comp)
+        with self.assertRaises(ValueError):
+            record_manual_result(run, score=101)
+
+    def test_timed_zero_time_raises(self):
+        run = self._voided_run(self.timed_comp)
+        with self.assertRaises(ValueError):
+            record_manual_result(run, time_ms=0)
+
+    def test_idempotent_second_call_updates_result(self):
+        run = self._voided_run(self.timed_comp)
+        record_manual_result(run, time_ms=10000)
+        run2 = self._voided_run(self.timed_comp)
+        record_manual_result(run2, time_ms=9000)
+        results = Result.objects.filter(team=self.team, competition=self.timed_comp)
+        self.assertEqual(results.count(), 1)
+        self.assertEqual(results.first().score, 9000)
+
+    def test_comment_stored_on_result(self):
+        run = self._voided_run(self.timed_comp)
+        record_manual_result(run, time_ms=5000, comment='Stopwatch measurement')
+        r = Result.objects.get(team=self.team, competition=self.timed_comp)
+        self.assertEqual(r.comment, 'Stopwatch measurement')
+
+
+class ManualEntryViewTest(TestCase):
+    """POST /contest/run/<id>/manual_entry records result on VOIDED run."""
+
+    def setUp(self):
+        self.contest = Contest.objects.create(name='View Fallback Cup')
+        self.timed_comp = Competition.objects.create(
+            name='LF View', contest=self.contest,
+            competition_type=CompetitionType.TIMED,
+            token=_secrets.token_hex(8),
+        )
+        self.judged_comp = Competition.objects.create(
+            name='Arm View', contest=self.contest,
+            competition_type=CompetitionType.JUDGED,
+            token=_secrets.token_hex(8),
+        )
+        self.team = Team.objects.create(name='Alpha View', contest=self.contest, token=None)
+
+    def _voided_run(self, comp):
+        return Run.objects.create(
+            team=self.team, competition=comp,
+            start_time=timezone.now(), duration=0, state=RunState.VOIDED,
+        )
+
+    def test_timed_manual_entry_redirects(self):
+        run = self._voided_run(self.timed_comp)
+        r = self.client.post(f'/contest/run/{run.id}/manual_entry', {'manual_time_ms': '7500'})
+        self.assertEqual(r.status_code, 302)
+
+    def test_judged_manual_entry_redirects(self):
+        run = self._voided_run(self.judged_comp)
+        r = self.client.post(f'/contest/run/{run.id}/manual_entry', {'score': '82'})
+        self.assertEqual(r.status_code, 302)
+
+    def test_non_voided_run_returns_400(self):
+        run = Run.objects.create(
+            team=self.team, competition=self.timed_comp,
+            start_time=timezone.now(), duration=0, state=RunState.PENDING,
+        )
+        r = self.client.post(f'/contest/run/{run.id}/manual_entry', {'manual_time_ms': '7500'})
+        self.assertEqual(r.status_code, 400)
+
+    def test_missing_time_ms_returns_400(self):
+        run = self._voided_run(self.timed_comp)
+        r = self.client.post(f'/contest/run/{run.id}/manual_entry', {})
+        self.assertEqual(r.status_code, 400)
+
+    def test_invalid_judged_score_returns_400(self):
+        run = self._voided_run(self.judged_comp)
+        r = self.client.post(f'/contest/run/{run.id}/manual_entry', {'score': '200'})
+        self.assertEqual(r.status_code, 400)
+
+    def test_unknown_run_returns_404(self):
+        r = self.client.post('/contest/run/99999/manual_entry', {'manual_time_ms': '5000'})
+        self.assertEqual(r.status_code, 404)
+
+    def test_timed_result_created_after_view(self):
+        run = self._voided_run(self.timed_comp)
+        self.client.post(f'/contest/run/{run.id}/manual_entry', {'manual_time_ms': '6200'})
+        self.assertTrue(Result.objects.filter(team=self.team, competition=self.timed_comp).exists())

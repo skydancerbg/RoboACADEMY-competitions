@@ -7,7 +7,7 @@ This directory contains the lap timer simulator and the full test scenario refer
 - Django dev server running: `http://100.118.13.80:8000`
 - `mqtt_bridge` running in a dedicated terminal (see below)
 - Python venv active: `source ~/venv/bin/activate`
-- MQTT broker reachable at `10.15.20.11:51883`
+- MQTT broker reachable at `10.15.20.11:1883`
 
 ## Start the MQTT bridge (Terminal A — keep open throughout testing)
 
@@ -17,7 +17,7 @@ cd ~/competitions/scoreboard && source ~/venv/bin/activate
 python manage.py mqtt_bridge
 ```
 
-The bridge log should show: `Connected to MQTT broker 10.15.20.11:51883`
+The bridge log should show: `Connected to MQTT broker 10.15.20.11:1883`
 
 ## Start the simulator (Terminal B)
 
@@ -110,7 +110,7 @@ All 35+ tests must pass. If any regression is found, fix it before moving to Pha
 ## Deduplication test (S10f)
 
 ```bash
-mosquitto_pub -h 10.15.20.11 -p 51883 -u deviceusr -P devicepass \
+mosquitto_pub -h 10.15.20.11 -p 1883 -u deviceusr -P devicepass \
   -t robosteam/laptimer/AA:BB:CC:DD:EE:01/event \
   -m '{"seq": 1, "ts": "2026-06-27T12:00:00.000Z"}'
 ```

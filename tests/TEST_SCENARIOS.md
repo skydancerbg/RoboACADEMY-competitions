@@ -303,7 +303,7 @@ All checks below should return HTTP 400 and leave DB state intact.
 
 **S10f — Deduplication test command:**
 ```bash
-mosquitto_pub -h 10.15.20.11 -p 51883 -u deviceusr -P devicepass \
+mosquitto_pub -h 10.15.20.11 -p 1883 -u deviceusr -P devicepass \
   -t robosteam/laptimer/AA:BB:CC:DD:EE:01/event \
   -m '{"seq": 1, "ts": "2026-06-27T12:00:00.000Z"}'
 ```

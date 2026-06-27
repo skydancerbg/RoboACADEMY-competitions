@@ -56,6 +56,9 @@ def parse_args():
                    help="auto=timer fires automatically; manual=press Enter per crossing")
     p.add_argument("--broker", default="10.15.20.11")
     p.add_argument("--port", type=int, default=51883)
+    p.add_argument("--start-seq", type=int, default=1,
+                   help="Starting value for the sequence counter (default: 1). "
+                        "Use when restarting to continue a session without seq collisions.")
     return p.parse_args()
 
 
@@ -67,7 +70,7 @@ class LapTimerSim:
         self.mode = args.mode
         self.broker = args.broker
         self.port = args.port
-        self.seq = 1
+        self.seq = args.start_seq
         self._run_active = False
         self._stop_requested = False
 

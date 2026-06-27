@@ -24,7 +24,7 @@ env = environ.Env(
     DATABASE_URL=(str,"sqlite:///db.sqlite3")
 )
 env.smart_cast = False
-environ.Env.read_env()  # reading .env file
+environ.Env.read_env(root(".env"))  # reading .env file from project root
 
 from pathlib import Path
 

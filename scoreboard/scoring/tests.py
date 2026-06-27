@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from django.test import TestCase
+from django.test import Client, TestCase
 from django.utils import timezone
 
 from contest.models import Competition, CompetitionType, Contest, Result, Run, RunState, Team
@@ -291,3 +291,196 @@ class BUG03LapNumberPopulatedTest(TestCase):
         events = LapEvent.objects.filter(run=run)
         for ev in events:
             self.assertIsNone(ev.lap_number)  # not set until finalized
+
+
+# ── Phase 5.5b: Integration tests (signal chain) ──────────────────────────────
+
+class TimedScoringSignalIntegrationTest(TestCase):
+    """
+    Full TIMED scoring signal chain:
+    LapEvent.objects.create() -> post_save signal -> assign_lap_event_to_active_run
+    -> try_finalize_run -> Run.COMPLETED + Result upserted.
+    """
+
+    def setUp(self):
+        self.device = make_device()
+        self.contest = make_contest()
+        self.competition = make_competition(self.contest, device=self.device, num_laps=2)
+        self.team = make_team(self.contest)
+        self._base_ts = timezone.now()
+        self.run = make_run(self.team, self.competition)  # ACTIVE
+
+    def _save_event(self, seq, offset_secs):
+        return LapEvent.objects.create(
+            device=self.device,
+            timestamp_utc=self._base_ts + timedelta(seconds=offset_secs),
+            sequence=seq,
+        )
+
+    def test_partial_crossings_do_not_finalize(self):
+        self._save_event(seq=1, offset_secs=0)
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.state, RunState.ACTIVE)
+
+    def test_all_crossings_finalize_run(self):
+        self._save_event(seq=10, offset_secs=0)   # start crossing
+        self._save_event(seq=11, offset_secs=5)   # lap 1
+        self._save_event(seq=12, offset_secs=12)  # lap 2 (finish)
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.state, RunState.COMPLETED)
+        self.assertEqual(self.run.time_ms, 12000)
+
+    def test_result_upserted_after_finalize(self):
+        self._save_event(seq=20, offset_secs=0)
+        self._save_event(seq=21, offset_secs=8)
+        self._save_event(seq=22, offset_secs=15)
+        result = Result.objects.get(team=self.team, competition=self.competition)
+        self.assertEqual(result.score, 15000)
+
+    def test_is_best_set_on_only_completed_run(self):
+        self._save_event(seq=30, offset_secs=0)
+        self._save_event(seq=31, offset_secs=6)
+        self._save_event(seq=32, offset_secs=10)
+        self.run.refresh_from_db()
+        self.assertTrue(self.run.is_best)
+
+    def test_lap_numbers_set_by_signal_chain(self):
+        self._save_event(seq=40, offset_secs=0)
+        self._save_event(seq=41, offset_secs=7)
+        self._save_event(seq=42, offset_secs=13)
+        events = list(
+            LapEvent.objects.filter(run=self.run).order_by('timestamp_utc')
+        )
+        self.assertEqual([ev.lap_number for ev in events], [0, 1, 2])
+
+
+class JudgedScoringSignalIntegrationTest(TestCase):
+    """
+    Full JUDGED scoring integration: POST to run_score view -> score_judged_run
+    -> _update_best_judged_result -> Run.COMPLETED + is_best + Result.
+    """
+
+    def setUp(self):
+        import secrets
+        self.client = Client()
+        self.contest = make_contest()
+        self.competition = Competition.objects.create(
+            name='Judged Cat', contest=self.contest,
+            competition_type=CompetitionType.JUDGED,
+            num_laps=1, num_runs=3, token=secrets.token_hex(8),
+        )
+        self.team = make_team(self.contest)
+
+    def _pending_run(self):
+        return make_run(self.team, self.competition, state=RunState.PENDING)
+
+    def test_first_score_sets_is_best(self):
+        run = self._pending_run()
+        self.client.post(f'/contest/run/{run.id}/score', {'score': 75})
+        run.refresh_from_db()
+        self.assertEqual(run.state, RunState.COMPLETED)
+        self.assertTrue(run.is_best)
+
+    def test_higher_score_takes_is_best(self):
+        r1 = self._pending_run()
+        self.client.post(f'/contest/run/{r1.id}/score', {'score': 70})
+        r2 = self._pending_run()
+        self.client.post(f'/contest/run/{r2.id}/score', {'score': 85})
+        r1.refresh_from_db(); r2.refresh_from_db()
+        self.assertFalse(r1.is_best)
+        self.assertTrue(r2.is_best)
+
+    def test_lower_score_does_not_take_is_best(self):
+        r1 = self._pending_run()
+        self.client.post(f'/contest/run/{r1.id}/score', {'score': 90})
+        r2 = self._pending_run()
+        self.client.post(f'/contest/run/{r2.id}/score', {'score': 60})
+        r1.refresh_from_db(); r2.refresh_from_db()
+        self.assertTrue(r1.is_best)
+        self.assertFalse(r2.is_best)
+
+    def test_result_reflects_best_score(self):
+        for score in [65, 88, 72]:
+            run = self._pending_run()
+            self.client.post(f'/contest/run/{run.id}/score', {'score': score})
+        result = Result.objects.get(team=self.team, competition=self.competition)
+        self.assertEqual(result.score, 88)
+
+
+class OrphanLapEventSignalTest(TestCase):
+    """
+    Signal must not crash when no ACTIVE run is found for the device.
+    LapEvent stored with run=None.
+    """
+
+    def setUp(self):
+        self.device = make_device()
+
+    def test_orphan_stored_with_run_none(self):
+        ev = LapEvent.objects.create(
+            device=self.device,
+            timestamp_utc=timezone.now(),
+            sequence=999,
+        )
+        ev.refresh_from_db()
+        self.assertIsNone(ev.run)
+        self.assertIsNone(ev.competition)
+
+    def test_no_result_created_for_orphan(self):
+        LapEvent.objects.create(
+            device=self.device,
+            timestamp_utc=timezone.now(),
+            sequence=998,
+        )
+        self.assertEqual(Result.objects.count(), 0)
+
+
+class DeduplicationSignalTest(TestCase):
+    """
+    Second save with same (device, sequence) must be silently discarded.
+    Signal must not fire, LapEvent count must not change.
+    """
+
+    def setUp(self):
+        self.device = make_device()
+        self.contest = make_contest()
+        self.competition = make_competition(self.contest, device=self.device, num_laps=1)
+        self.team = make_team(self.contest)
+        self.run = make_run(self.team, self.competition)
+
+    def test_duplicate_seq_not_saved(self):
+        LapEvent.objects.create(
+            device=self.device, run=self.run, competition=self.competition,
+            timestamp_utc=timezone.now(), sequence=50,
+        )
+        count_before = LapEvent.objects.count()
+        # get_or_create with same seq — simulates mqtt_bridge deduplication
+        _, created = LapEvent.objects.get_or_create(
+            device=self.device, sequence=50,
+            defaults={'timestamp_utc': timezone.now()},
+        )
+        self.assertFalse(created)
+        self.assertEqual(LapEvent.objects.count(), count_before)
+
+    def test_run_not_double_finalized(self):
+        """A run that finalizes on crossing N must not change if crossing N is re-delivered."""
+        # Finalize with 2 crossings (1-lap run)
+        LapEvent.objects.create(
+            device=self.device, run=self.run, competition=self.competition,
+            timestamp_utc=timezone.now(), sequence=60,
+        )
+        LapEvent.objects.create(
+            device=self.device, run=self.run, competition=self.competition,
+            timestamp_utc=timezone.now() + timedelta(seconds=10), sequence=61,
+        )
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.state, RunState.COMPLETED)
+        time_ms_first = self.run.time_ms
+
+        # Re-deliver crossing 61 (duplicate) — must not alter the run
+        LapEvent.objects.get_or_create(
+            device=self.device, sequence=61,
+            defaults={'timestamp_utc': timezone.now()},
+        )
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.time_ms, time_ms_first)

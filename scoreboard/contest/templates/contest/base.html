@@ -1,0 +1,22 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {% block title %}<title>Nitroclubs Scoreboard</title>{% endblock %}
+  <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
+</head>
+<body>
+  {% block content %}<!-- default content text (typically empty) -->{% endblock %}
+    <footer>
+    <img width=100 src="{% static 'contest/img/nitrocropped.png' %}">
+    <nav>
+      <a href="/admin">Admin</a>
+      <a href="/contest">Contests</a>
+        {% if contest %}
+        <a href="{% url 'contest:contest_competitions' contest.id  %}">{{ contest.name }}</a> 
+        {% endif %}
+    </nav>
+    </footer>
+</body>
+</html>
+

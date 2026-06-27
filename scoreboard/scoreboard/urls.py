@@ -22,4 +22,5 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path('contest/',include("contest.urls")),
     path('chaining/', include('smart_selects.urls')),
+    path('devices/', include('devices.urls')),
 ]

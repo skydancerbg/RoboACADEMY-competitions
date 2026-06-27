@@ -13,6 +13,12 @@ class DeviceStatus(models.TextChoices):
     ERROR   = 'ERROR',   _('Error')
 
 
+class RegistrationStatus(models.TextChoices):
+    PENDING  = 'PENDING',  _('Pending approval')
+    ACTIVE   = 'ACTIVE',   _('Active')
+    INACTIVE = 'INACTIVE', _('Inactive')
+
+
 class LapTimerDevice(models.Model):
     device_id     = models.CharField(
         max_length=17, unique=True,
@@ -26,6 +32,10 @@ class LapTimerDevice(models.Model):
     status        = models.CharField(
         max_length=10, choices=DeviceStatus.choices,
         default=DeviceStatus.OFFLINE)
+    registration_status = models.CharField(
+        max_length=10, choices=RegistrationStatus.choices,
+        default=RegistrationStatus.PENDING,
+        help_text='Approval state: PENDING=awaiting admin approval, ACTIVE=approved, INACTIVE=deactivated.')
     last_seen     = models.DateTimeField(null=True, blank=True)
     country       = models.CharField(max_length=100, blank=True)
     organisation  = models.CharField(

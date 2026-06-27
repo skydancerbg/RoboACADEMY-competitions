@@ -2,21 +2,53 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  {% block title %}<title>Nitroclubs Scoreboard</title>{% endblock %}
+  {% block title %}<title>RoboSTEAM Academy — Competitions</title>{% endblock %}
   <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
+  <style>
+    :root {
+      --accent: #3a8fa5;
+      --accent-hover: #2e7a8e;
+      --accent-text: #fff;
+    }
+    header {
+      background: var(--accent);
+      padding: 0.5rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    header img { height: 48px; }
+    header span {
+      color: #fff;
+      font-size: 1.05rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    footer {
+      font-size: 0.82rem;
+      color: #666;
+      border-top: 1px solid #ddd;
+      padding-top: 0.5rem;
+    }
+    footer nav { margin-bottom: 0.3rem; }
+    a { color: var(--accent); }
+    a:hover { color: var(--accent-hover); }
+  </style>
 </head>
 <body>
-  {% block content %}<!-- default content text (typically empty) -->{% endblock %}
-    <footer>
-    <img width=100 src="{% static 'contest/img/nitrocropped.png' %}">
+  <header>
+    <img src="{% static 'contest/img/robostem-academy.png' %}" alt="RoboSTEAM Academy logo">
+  </header>
+  {% block content %}{% endblock %}
+  <footer>
     <nav>
       <a href="/admin">Admin</a>
       <a href="/contest">Contests</a>
-        {% if contest %}
-        <a href="{% url 'contest:contest_competitions' contest.id  %}">{{ contest.name }}</a> 
-        {% endif %}
+      {% if contest %}
+      <a href="{% url 'contest:contest_competitions' contest.id %}">{{ contest.name }}</a>
+      {% endif %}
     </nav>
-    </footer>
+    <p>RoboSTEAM Academy &mdash; Erasmus+ KA220-VET-7CF4F308 &mdash; &copy; 2024&ndash;2027</p>
+  </footer>
 </body>
 </html>
-

@@ -116,3 +116,105 @@ mosquitto_pub -h 10.15.20.11 -p 1883 -u deviceusr -P devicepass \
 ```
 
 Expect: `LapEvent.objects.count()` unchanged; bridge log shows "Duplicate … ignored".
+
+
+---
+
+## Robot Simulator (`tests/robot_sim.py`)
+
+Simulates a PicoBot robot over MQTT. Use this alongside `lap_timer_sim.py`
+for S18–S20 scenarios that require a robot to receive START/STOP commands.
+
+### Start the robot simulator (Terminal C)
+
+```bash
+ssh competitions_dev
+source ~/venv/bin/activate
+export MQTT_USERNAME=deviceusr
+export MQTT_PASSWORD=devicepass
+```
+
+#### Basic — listen for commands and log them
+
+```bash
+python ~/competitions/tests/robot_sim.py \
+  --mac 11:22:33:44:55:01 \
+  --competition 4
+```
+
+The sim connects, publishes a heartbeat, and waits silently.
+When the judge clicks **Start** in the browser, you will see:
+
+```
+[12:34:56] >>> START received (source=competition, run_id=42) <<<
+             full payload: {"cmd": "START", "run_id": 42, "competition_id": 4}
+```
+
+When **Void** or a timeout fires:
+
+```
+[12:35:28] >>> STOP received  (source=competition, run_id=42) <<<
+             full payload: {"cmd": "STOP", "run_id": 42}
+```
+
+#### With ACK response (`--respond`)
+
+Publishes a status message back to `robosteam/robot/{mac}/status` on every
+START/STOP, confirming the robot received the command:
+
+```bash
+python ~/competitions/tests/robot_sim.py \
+  --mac 11:22:33:44:55:01 \
+  --competition 4 \
+  --respond
+```
+
+Example output after a START:
+
+```
+[12:34:56] >>> START received (source=competition, run_id=42) <<<
+             full payload: {"cmd": "START", "run_id": 42, "competition_id": 4}
+[12:34:56] ACK sent: {"device_id": "11:22:33:44:55:01", "ts": "2026-06-27T12:34:56.123Z", "firmware_version": "robot-sim-1.0", "ack": "START", "run_id": 42}
+```
+
+#### Two robots simultaneously (S20 — multi-robot START)
+
+Open two terminals, each with a different `--mac`:
+
+```bash
+# Terminal C
+python ~/competitions/tests/robot_sim.py --mac 11:22:33:44:55:01 --competition 4
+
+# Terminal D
+python ~/competitions/tests/robot_sim.py --mac 11:22:33:44:55:02 --competition 4
+```
+
+Both sims subscribe to `robosteam/competition/4/cmd`. When the judge starts
+a run, both consoles should print the START command within the same second.
+
+#### Robot sim + lap timer sim together (S19)
+
+```bash
+# Terminal B — lap timer
+python ~/competitions/tests/lap_timer_sim.py \
+  --mac AA:BB:CC:DD:EE:01 --competition 4 --laps 3 --sequence "2,6,5,4"
+
+# Terminal C — robot
+python ~/competitions/tests/robot_sim.py \
+  --mac 11:22:33:44:55:01 --competition 4
+```
+
+Judge starts run → robot sim logs START → lap timer fires 4 crossings →
+server records `time_ms` → scoreboard updates via WebSocket.
+
+### CLI argument reference — robot_sim.py
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--mac` | `11:22:33:44:55:01` | Robot MAC (used as device_id and MQTT client_id) |
+| `--competition` | `1` | Category DB id (for competition-level cmd topic) |
+| `--broker` | `10.15.20.11` | MQTT broker host |
+| `--port` | `51883` | MQTT broker port |
+| `--user` | `$MQTT_USERNAME` | MQTT username (overrides env var) |
+| `--password` | `$MQTT_PASSWORD` | MQTT password (overrides env var) |
+| `--respond` | off | Send ACK status message on each START/STOP |

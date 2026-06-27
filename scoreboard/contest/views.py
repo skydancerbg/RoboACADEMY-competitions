@@ -270,3 +270,16 @@ def robot_action(request):
             response = 'not_running'
 
     return JsonResponse({'result': response})
+def contest_ranking(request, contest_id):
+    from scoring.models import OverallResult
+    contest = get_object_or_404(Contest, pk=contest_id)
+    overall_results = (
+        OverallResult.objects
+        .filter(contest=contest)
+        .select_related('team')
+        .order_by('rank', 'team__name')
+    )
+    return render(request, 'contest/ranking.html', {
+        'contest': contest,
+        'overall_results': overall_results,
+    })

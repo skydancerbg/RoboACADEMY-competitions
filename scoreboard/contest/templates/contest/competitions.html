@@ -10,7 +10,7 @@
         <td>Team/Competition</td>
         {% for competition in competitions %}
         <td>
-            <a href="{% url 'contest:competition_board' competition.id  %}">{{ competition.name }}</a> 
+            <a href="{% url 'contest:competition_board' competition.id  %}">{{ competition.name }}</a>
             <br>{{competition.status}}
         </td>
 
@@ -27,5 +27,7 @@
 {% endfor %}
 </table>
 </p>
+
+<p><a href="{% url 'contest:contest_ranking' contest.id %}">View Overall Ranking &rarr;</a></p>
 
 {% endblock %}

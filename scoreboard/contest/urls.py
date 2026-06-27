@@ -7,6 +7,7 @@ app_name = 'contest'
 urlpatterns = [
     path('', views.index, name='index'),
     path('contest/<int:contest_id>', views.contest_competitions, name='contest_competitions'),
+    path('contest/<int:contest_id>/ranking/', views.contest_ranking, name='contest_ranking'),
     path('team/<int:team_id>', views.contest_team, name='contest_team'),
     path('competition_board/<int:competition_id>', views.competition_board, name='competition_board'),
     path('competition/<int:competition_id>/run/create', views.run_create, name='run_create'),

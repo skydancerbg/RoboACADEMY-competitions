@@ -1,0 +1,29 @@
+{% extends "contest/base.html" %}
+{% block content %}
+<h2>{{ contest.name }} &mdash; Overall Ranking</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Rank</th>
+      <th>Team</th>
+      <th>Points</th>
+      <th>Eligible</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for result in overall_results %}
+    <tr>
+      <td>{% if result.rank %}{{ result.rank }}{% else %}&mdash;{% endif %}</td>
+      <td><a href="{% url 'contest:contest_team' result.team.id %}">{{ result.team.name }}</a></td>
+      <td>{{ result.total_points }}</td>
+      <td>{% if result.is_eligible %}Yes{% else %}No (missing result in at least one category){% endif %}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="4">No results yet. Scores will appear here as categories are completed.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<p><a href="{% url 'contest:contest_competitions' contest.id %}">&larr; Back to categories</a></p>
+{% endblock %}

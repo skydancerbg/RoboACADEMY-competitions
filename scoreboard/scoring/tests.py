@@ -484,3 +484,317 @@ class DeduplicationSignalTest(TestCase):
         )
         self.run.refresh_from_db()
         self.assertEqual(self.run.time_ms, time_ms_first)
+
+
+
+# ── Phase 5.6: Overall Ranking tests ──────────────────────────────────────────
+
+import secrets as _secrets
+
+from scoring.engine import _update_overall_ranking
+from scoring.models import OverallResult
+
+
+def _t(contest, name):
+    """Create a team with token=None (field is null=True) to avoid unique collisions."""
+    return Team.objects.create(name=name, contest=contest, token=None)
+
+
+def _c(contest, name, ctype, **kwargs):
+    """Create a Competition with a unique token derived from name."""
+    return Competition.objects.create(
+        name=name, contest=contest, competition_type=ctype,
+        token=f'{name}-{_secrets.token_hex(4)}', **kwargs,
+    )
+
+
+class OverallRankingBasicTest(TestCase):
+    """Correct points + ranks for 3 teams across 2 categories."""
+
+    def setUp(self):
+        self.contest = Contest.objects.create(
+            name='Ranking Cup',
+            points_table={'1': 10, '2': 8, '3': 6, '4': 4, '5': 2, 'default': 1},
+        )
+        self.team_a = _t(self.contest, 'Alpha')
+        self.team_b = _t(self.contest, 'Bravo')
+        self.team_c = _t(self.contest, 'Charlie')
+        self.cat_timed  = _c(self.contest, 'Line Following', CompetitionType.TIMED,  num_laps=1)
+        self.cat_judged = _c(self.contest, 'Arm Task',       CompetitionType.JUDGED, num_laps=1)
+
+    def _result(self, team, cat, score):
+        Result.objects.update_or_create(team=team, competition=cat, defaults={'score': score})
+
+    def test_correct_points_calculated(self):
+        # TIMED (low wins): Alpha=15000(1st=10), Bravo=21000(2nd=8), Charlie=27000(3rd=6)
+        # JUDGED (high wins): Bravo=90(1st=10), Alpha=80(2nd=8), Charlie=70(3rd=6)
+        # Totals: Alpha=18, Bravo=18, Charlie=12
+        self._result(self.team_a, self.cat_timed, 15000)
+        self._result(self.team_b, self.cat_timed, 21000)
+        self._result(self.team_c, self.cat_timed, 27000)
+        self._result(self.team_b, self.cat_judged, 90)
+        self._result(self.team_a, self.cat_judged, 80)
+        self._result(self.team_c, self.cat_judged, 70)
+
+        _update_overall_ranking(self.cat_timed)
+
+        ra = OverallResult.objects.get(contest=self.contest, team=self.team_a)
+        rb = OverallResult.objects.get(contest=self.contest, team=self.team_b)
+        rc = OverallResult.objects.get(contest=self.contest, team=self.team_c)
+
+        self.assertEqual(ra.total_points, 18)
+        self.assertEqual(rb.total_points, 18)
+        self.assertEqual(rc.total_points, 12)
+
+    def test_charlie_ranked_third(self):
+        self._result(self.team_a, self.cat_timed, 15000)
+        self._result(self.team_b, self.cat_timed, 21000)
+        self._result(self.team_c, self.cat_timed, 27000)
+        self._result(self.team_b, self.cat_judged, 90)
+        self._result(self.team_a, self.cat_judged, 80)
+        self._result(self.team_c, self.cat_judged, 70)
+
+        _update_overall_ranking(self.cat_timed)
+
+        rc = OverallResult.objects.get(contest=self.contest, team=self.team_c)
+        self.assertEqual(rc.rank, 3)
+        self.assertTrue(rc.is_eligible)
+
+    def test_tied_teams_get_rank_1_and_2(self):
+        # Alpha=18, Bravo=18 — share ranks 1 and 2 in some order
+        self._result(self.team_a, self.cat_timed, 15000)
+        self._result(self.team_b, self.cat_timed, 21000)
+        self._result(self.team_c, self.cat_timed, 27000)
+        self._result(self.team_b, self.cat_judged, 90)
+        self._result(self.team_a, self.cat_judged, 80)
+        self._result(self.team_c, self.cat_judged, 70)
+
+        _update_overall_ranking(self.cat_timed)
+
+        ra = OverallResult.objects.get(contest=self.contest, team=self.team_a)
+        rb = OverallResult.objects.get(contest=self.contest, team=self.team_b)
+        self.assertIn(ra.rank, (1, 2))
+        self.assertIn(rb.rank, (1, 2))
+        self.assertNotEqual(ra.rank, rb.rank)
+
+    def test_all_teams_created_as_overall_results(self):
+        self._result(self.team_a, self.cat_timed, 15000)
+        self._result(self.team_b, self.cat_timed, 21000)
+        self._result(self.team_c, self.cat_timed, 27000)
+        self._result(self.team_a, self.cat_judged, 80)
+        self._result(self.team_b, self.cat_judged, 70)
+        self._result(self.team_c, self.cat_judged, 60)
+
+        _update_overall_ranking(self.cat_timed)
+        self.assertEqual(OverallResult.objects.filter(contest=self.contest).count(), 3)
+
+
+class OverallRankingEligibilityTest(TestCase):
+    """Team missing a result in any category is ineligible and unranked."""
+
+    def setUp(self):
+        self.contest = Contest.objects.create(
+            name='Elig Cup', points_table={'1': 10, '2': 8, 'default': 1},
+        )
+        self.team_a = _t(self.contest, 'Alpha')
+        self.team_b = _t(self.contest, 'Bravo')
+        self.team_c = _t(self.contest, 'Charlie')
+        self.cat_timed  = _c(self.contest, 'LF',  CompetitionType.TIMED,  num_laps=1)
+        self.cat_judged = _c(self.contest, 'Arm', CompetitionType.JUDGED, num_laps=1)
+
+    def _result(self, team, cat, score):
+        Result.objects.update_or_create(team=team, competition=cat, defaults={'score': score})
+
+    def test_team_missing_one_category_is_ineligible(self):
+        self._result(self.team_a, self.cat_timed, 15000)
+        self._result(self.team_b, self.cat_timed, 21000)
+        # Charlie only in judged — missing timed result
+        self._result(self.team_c, self.cat_judged, 90)
+        self._result(self.team_a, self.cat_judged, 80)
+        self._result(self.team_b, self.cat_judged, 70)
+
+        _update_overall_ranking(self.cat_timed)
+
+        rc = OverallResult.objects.get(contest=self.contest, team=self.team_c)
+        self.assertFalse(rc.is_eligible)
+        self.assertIsNone(rc.rank)
+
+    def test_ineligible_team_has_zero_points(self):
+        # Only Alpha has results; Bravo and Charlie have none
+        self._result(self.team_a, self.cat_timed, 15000)
+        self._result(self.team_a, self.cat_judged, 80)
+
+        _update_overall_ranking(self.cat_timed)
+
+        rb = OverallResult.objects.get(contest=self.contest, team=self.team_b)
+        rc = OverallResult.objects.get(contest=self.contest, team=self.team_c)
+        self.assertEqual(rb.total_points, 0)
+        self.assertEqual(rc.total_points, 0)
+
+    def test_eligible_teams_ranked_ineligible_excluded(self):
+        self._result(self.team_a, self.cat_timed, 15000)
+        self._result(self.team_b, self.cat_timed, 21000)
+        self._result(self.team_a, self.cat_judged, 80)
+        self._result(self.team_b, self.cat_judged, 70)
+        # Charlie: no results at all
+
+        _update_overall_ranking(self.cat_timed)
+
+        ra = OverallResult.objects.get(contest=self.contest, team=self.team_a)
+        rb = OverallResult.objects.get(contest=self.contest, team=self.team_b)
+        rc = OverallResult.objects.get(contest=self.contest, team=self.team_c)
+
+        self.assertEqual(ra.rank, 1)
+        self.assertEqual(rb.rank, 2)
+        self.assertIsNone(rc.rank)
+
+
+class OverallRankingTieBreakTest(TestCase):
+    """Tie-break: most 1st-place category finishes, then 2nd, etc."""
+
+    def setUp(self):
+        self.contest = Contest.objects.create(
+            name='Tie Cup', points_table={'1': 10, '2': 8, '3': 6, 'default': 1},
+        )
+        self.team_a = _t(self.contest, 'Alpha')
+        self.team_b = _t(self.contest, 'Bravo')
+        self.cat1 = _c(self.contest, 'Cat1', CompetitionType.JUDGED, num_laps=1)
+        self.cat2 = _c(self.contest, 'Cat2', CompetitionType.JUDGED, num_laps=1)
+
+    def _result(self, team, cat, score):
+        Result.objects.update_or_create(team=team, competition=cat, defaults={'score': score})
+
+    def test_clear_winner_ranked_first(self):
+        # Alpha 1st+1st=20pts, Bravo 2nd+2nd=16pts
+        self._result(self.team_a, self.cat1, 90)
+        self._result(self.team_b, self.cat1, 70)
+        self._result(self.team_a, self.cat2, 85)
+        self._result(self.team_b, self.cat2, 60)
+
+        _update_overall_ranking(self.cat1)
+
+        ra = OverallResult.objects.get(contest=self.contest, team=self.team_a)
+        rb = OverallResult.objects.get(contest=self.contest, team=self.team_b)
+        self.assertEqual(ra.rank, 1)
+        self.assertEqual(rb.rank, 2)
+
+    def test_equal_points_still_assigns_distinct_ranks(self):
+        # Alpha: 1st in cat1(10) + 2nd in cat2(8) = 18pts
+        # Bravo: 2nd in cat1(8) + 1st in cat2(10) = 18pts — true tie, ranks must be distinct
+        self._result(self.team_a, self.cat1, 90)
+        self._result(self.team_b, self.cat1, 80)
+        self._result(self.team_b, self.cat2, 90)
+        self._result(self.team_a, self.cat2, 80)
+
+        _update_overall_ranking(self.cat1)
+
+        ra = OverallResult.objects.get(contest=self.contest, team=self.team_a)
+        rb = OverallResult.objects.get(contest=self.contest, team=self.team_b)
+        self.assertEqual(ra.total_points, 18)
+        self.assertEqual(rb.total_points, 18)
+        self.assertIn(ra.rank, (1, 2))
+        self.assertIn(rb.rank, (1, 2))
+        self.assertNotEqual(ra.rank, rb.rank)
+
+
+class OverallRankingPointsTableTest(TestCase):
+    """Custom points_table is applied; fallback to 1 for unlisted positions."""
+
+    def setUp(self):
+        self.contest = Contest.objects.create(
+            name='Points Cup',
+            points_table={'1': 5},  # only 1st gets 5; all others fall back to 1
+        )
+        self.team_a = _t(self.contest, 'Alpha')
+        self.team_b = _t(self.contest, 'Bravo')
+        self.team_c = _t(self.contest, 'Charlie')
+        self.cat_timed  = _c(self.contest, 'LF',  CompetitionType.TIMED,  num_laps=1)
+        self.cat_judged = _c(self.contest, 'Arm', CompetitionType.JUDGED, num_laps=1)
+
+    def _result(self, team, cat, score):
+        Result.objects.update_or_create(team=team, competition=cat, defaults={'score': score})
+
+    def test_first_place_gets_configured_points(self):
+        # Alpha 1st in both → 5+5=10; Bravo 2nd → 1+1=2; Charlie 3rd → 1+1=2
+        self._result(self.team_a, self.cat_timed, 1000)
+        self._result(self.team_b, self.cat_timed, 2000)
+        self._result(self.team_c, self.cat_timed, 3000)
+        self._result(self.team_a, self.cat_judged, 90)
+        self._result(self.team_b, self.cat_judged, 80)
+        self._result(self.team_c, self.cat_judged, 70)
+
+        _update_overall_ranking(self.cat_timed)
+
+        ra = OverallResult.objects.get(contest=self.contest, team=self.team_a)
+        rb = OverallResult.objects.get(contest=self.contest, team=self.team_b)
+        rc = OverallResult.objects.get(contest=self.contest, team=self.team_c)
+
+        self.assertEqual(ra.total_points, 10)
+        self.assertEqual(rb.total_points, 2)
+        self.assertEqual(rc.total_points, 2)
+        self.assertEqual(ra.rank, 1)
+
+    def test_empty_points_table_falls_back_to_one_per_position(self):
+        self.contest.points_table = {}
+        self.contest.save()
+
+        self._result(self.team_a, self.cat_timed, 1000)
+        self._result(self.team_b, self.cat_timed, 2000)
+        self._result(self.team_a, self.cat_judged, 90)
+        self._result(self.team_b, self.cat_judged, 80)
+
+        _update_overall_ranking(self.cat_timed)
+
+        ra = OverallResult.objects.get(contest=self.contest, team=self.team_a)
+        rb = OverallResult.objects.get(contest=self.contest, team=self.team_b)
+        # Each team: 1pt per category × 2 = 2pts each
+        self.assertEqual(ra.total_points, 2)
+        self.assertEqual(rb.total_points, 2)
+
+
+class OverallRankingAutoUpdateTest(TestCase):
+    """_update_overall_ranking is called automatically via _update_best_timed/judged_result."""
+
+    def setUp(self):
+        self.device = make_device()
+        self.contest = Contest.objects.create(
+            name='Auto Cup', points_table={'1': 10, '2': 8, 'default': 1},
+        )
+        self.team_a = _t(self.contest, 'Alpha')
+        self.team_b = _t(self.contest, 'Bravo')
+        self.cat_timed  = _c(self.contest, 'LF',  CompetitionType.TIMED,  num_laps=1, lap_timer=self.device)
+        self.cat_judged = _c(self.contest, 'Arm', CompetitionType.JUDGED, num_laps=1)
+
+    def _timed_result(self, team, time_ms):
+        run = make_run(team, self.cat_timed, state=RunState.COMPLETED)
+        run.time_ms = time_ms
+        run.save()
+        _update_best_timed_result(run)
+
+    def _judged_result(self, team, score):
+        run = make_run(team, self.cat_judged, state=RunState.COMPLETED)
+        run.score = score
+        run.save()
+        _update_best_judged_result(run)
+
+    def test_overall_result_created_after_timed_score(self):
+        self._timed_result(self.team_a, 10000)
+        self.assertTrue(OverallResult.objects.filter(contest=self.contest).exists())
+
+    def test_overall_result_created_after_judged_score(self):
+        self._judged_result(self.team_a, 80)
+        self.assertTrue(OverallResult.objects.filter(contest=self.contest).exists())
+
+    def test_ranking_updates_as_results_come_in(self):
+        # After timed only: no judged result → ineligible
+        self._timed_result(self.team_a, 10000)
+        self._timed_result(self.team_b, 20000)
+        ra = OverallResult.objects.get(contest=self.contest, team=self.team_a)
+        self.assertFalse(ra.is_eligible)
+
+        # After both categories scored: eligible + ranked 1st
+        self._judged_result(self.team_a, 90)
+        self._judged_result(self.team_b, 70)
+        ra.refresh_from_db()
+        self.assertTrue(ra.is_eligible)
+        self.assertEqual(ra.rank, 1)

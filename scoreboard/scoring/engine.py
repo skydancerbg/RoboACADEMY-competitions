@@ -1,4 +1,4 @@
-from contest.models import Result, Run, RunState
+from contest.models import Competition, CompetitionType, Result, Run, RunState, Team
 from devices.models import LapEvent
 
 
@@ -67,7 +67,7 @@ def score_judged_run(run, score, comment=''):
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _update_best_timed_result(run):
-    """Mark is_best on the fastest completed TIMED run and upsert Result."""
+    """Mark is_best on the fastest completed TIMED run, upsert Result, refresh overall ranking."""
     completed = list(
         Run.objects.filter(
             team=run.team,
@@ -89,9 +89,11 @@ def _update_best_timed_result(run):
             defaults={'score': total},
         )
 
+    _update_overall_ranking(run.competition)
+
 
 def _update_best_judged_result(run):
-    """Mark is_best on the highest-scoring completed JUDGED run and upsert Result."""
+    """Mark is_best on the highest-scoring completed JUDGED run, upsert Result, refresh overall ranking."""
     completed = list(
         Run.objects.filter(
             team=run.team,
@@ -111,6 +113,97 @@ def _update_best_judged_result(run):
             competition=run.competition,
             defaults={'score': best.score},
         )
+
+    _update_overall_ranking(run.competition)
+
+
+def _lookup_points(points_map, position):
+    """Return points for a given position from the contest's points_map."""
+    key = str(position)
+    if key in points_map:
+        return int(points_map[key])
+    if 'default' in points_map:
+        return int(points_map['default'])
+    return 1
+
+
+def _update_overall_ranking(competition):
+    """Recalculate OverallResult for every team in this competition's contest."""
+    from scoring.models import OverallResult
+
+    contest = competition.contest
+    all_categories = list(Competition.objects.filter(contest=contest))
+    teams = list(Team.objects.filter(contest=contest))
+
+    if not all_categories or not teams:
+        return
+
+    points_map = contest.points_table or {}
+
+    # Build ordered team_id list per category (rank order)
+    category_rankings = {}
+    for cat in all_categories:
+        if cat.competition_type == CompetitionType.TIMED:
+            ordered = list(
+                Result.objects.filter(competition=cat)
+                .order_by('score')
+                .values_list('team_id', flat=True)
+            )
+        else:
+            ordered = list(
+                Result.objects.filter(competition=cat)
+                .order_by('-score')
+                .values_list('team_id', flat=True)
+            )
+        category_rankings[cat.id] = ordered
+
+    max_positions = len(teams)
+    team_data = {}
+    for team in teams:
+        is_eligible = all(team.id in category_rankings[cat.id] for cat in all_categories)
+
+        total_points = 0
+        position_counts = [0] * max_positions
+
+        if is_eligible:
+            for cat in all_categories:
+                ranking = category_rankings[cat.id]
+                try:
+                    pos = ranking.index(team.id) + 1  # 1-based
+                    total_points += _lookup_points(points_map, pos)
+                    if pos <= max_positions:
+                        position_counts[pos - 1] += 1
+                except ValueError:
+                    pass
+
+        team_data[team.id] = {
+            'total_points': total_points,
+            'is_eligible': is_eligible,
+            'position_counts': position_counts,
+        }
+
+    # Upsert all OverallResult rows (rank=None until assigned below)
+    for team in teams:
+        data = team_data[team.id]
+        OverallResult.objects.update_or_create(
+            contest=contest,
+            team=team,
+            defaults={
+                'total_points': data['total_points'],
+                'is_eligible': data['is_eligible'],
+                'rank': None,
+            },
+        )
+
+    # Sort eligible teams: most total_points first; tie-break by most 1st-place finishes, then 2nd, etc.
+    eligible = [t for t in teams if team_data[t.id]['is_eligible']]
+    eligible.sort(key=lambda t: (
+        -team_data[t.id]['total_points'],
+        *[-c for c in team_data[t.id]['position_counts']],
+    ))
+
+    for rank, team in enumerate(eligible, start=1):
+        OverallResult.objects.filter(contest=contest, team=team).update(rank=rank)
 
 
 # Keep old name as alias so existing callers (signals) still work

@@ -346,3 +346,296 @@ S10              (Error guards — can run after S2 and S7 provide data)
 sequence counter to 1 — the bridge's `(device, sequence)` unique_together constraint
 would silently discard duplicates, so the run would never receive enough crossings to
 finalize. If you must restart, note the last `seq` value and do not reuse those numbers.
+
+---
+
+## S11–S20: Server Phase 5.6–5.12 Scenarios
+
+These scenarios cover Overall Ranking (S11–S13), WebSocket live push (S14),
+Auto-timeout (S15), Device Self-Registration (S16), MQTT Fallback / Manual
+Mode (S17), and Robot Simulator integration (S18–S20).
+
+**Automated scenarios** (S11–S13, S15–S17) run without a browser or MQTT broker.
+**Manual scenarios** (S14, S18–S20) require a browser and/or live MQTT.
+
+---
+
+### S11 — Overall Ranking (automated)
+
+**Goal:** Verify that `OverallResult` rows are created correctly when all 3 teams
+complete both a TIMED and a JUDGED category.
+
+| Team    | TIMED ms | TIMED rank | JUDGED score | JUDGED rank | Total pts | Overall rank |
+|---------|----------|------------|--------------|-------------|-----------|--------------|
+| Alpha   | 10 000   | 1st (10)   | 90           | 1st (10)    | 20        | **1**        |
+| Bravo   | 20 000   | 2nd (8)    | 80           | 2nd (8)     | 16        | **2**        |
+| Charlie | 30 000   | 3rd (6)    | 70           | 3rd (6)     | 12        | **3**        |
+
+**Run:**
+```bash
+cd ~/competitions/scoreboard && source ~/venv/bin/activate
+python ../tests/run_ranking_scenarios.py --scenario S11
+```
+
+**Verify:**
+- [ ] All 3 `OverallResult` rows created
+- [ ] `is_eligible=True` for all 3 teams
+- [ ] `total_points` and `rank` match the table above
+- [ ] Script exits 0
+
+---
+
+### S12 — Tie-break by 1st-place count (automated)
+
+**Goal:** When two teams have equal `total_points`, the team with more 1st-place
+category finishes ranks higher.
+
+| Category | Alpha | Bravo   | Charlie |
+|----------|-------|---------|---------|
+| Cat A    | 1st   | 2nd     | 3rd     |
+| Cat B    | 1st   | 2nd     | 3rd     |
+| Cat C    | 3rd   | **1st** | 2nd     |
+| **Total** | **26 pts** | **26 pts** | **20 pts** |
+| **Rank**  | **1** | **2**  | **3**   |
+
+Alpha wins tie (2 firsts vs Bravo's 1 first).
+
+**Run:**
+```bash
+python ../tests/run_ranking_scenarios.py --scenario S12
+```
+
+**Verify:**
+- [ ] `Alpha.total_points == Bravo.total_points == 26`
+- [ ] `Alpha.rank == 1`, `Bravo.rank == 2` (tie-break resolved correctly)
+- [ ] Script exits 0
+
+---
+
+### S13 — DNF exclusion from Overall Ranking (automated)
+
+**Goal:** A team that has a Result in only some categories is ineligible for the
+Overall Ranking (`is_eligible=False`, `rank=None`) but still appears in individual
+category tables.
+
+**Setup:** Charlie completes TIMED but deliberately has no JUDGED result.
+
+**Run:**
+```bash
+python ../tests/run_ranking_scenarios.py --scenario S13
+```
+
+**Verify:**
+- [ ] `Charlie.is_eligible == False`
+- [ ] `Charlie.rank is None` (excluded from Overall Ranking)
+- [ ] `Charlie.total_points == 0`
+- [ ] Charlie still appears in TIMED category result table
+- [ ] Alpha and Bravo have valid ranks
+- [ ] Script exits 0
+
+---
+
+### S14 — Live WebSocket scoreboard push (manual)
+
+**Goal:** Changes to run/result state push to connected browsers automatically
+without a page refresh.
+
+**Prerequisites:** Dev server running, at least one TIMED competition with ≥1 team.
+
+**Steps:**
+1. Open the competition board in a browser: `http://100.118.13.80:8000/contest/competition/<id>/`
+2. Open browser DevTools → Console. Confirm: `[WS] Connected` is logged.
+3. In a second terminal, complete a run using the lap timer simulator (S2-style).
+4. Watch the scoreboard in the browser.
+
+**Verify:**
+- [ ] `#ws-status` indicator shows green "Live" within 2 s of page load
+- [ ] Scoreboard table updates automatically when the run finalises (no manual refresh)
+- [ ] DevTools Console shows: `[WS] Reloading board...`
+- [ ] Running the lap timer sim for a second team also triggers a board update
+
+---
+
+### S15 — Auto-timeout (automated)
+
+**Goal:** An ACTIVE TIMED run that exceeds `timeout_seconds` is automatically
+voided by `check_and_void_timed_out_runs()`.
+
+**Run:**
+```bash
+python ../tests/run_server_complete_scenarios.py --scenario S15
+```
+*(The script creates a run with `timeout_seconds=5` and waits 6 s before calling
+`check_and_void_timed_out_runs()`.)*
+
+**Verify:**
+- [ ] `run.state == VOIDED` after the call
+- [ ] `check_and_void_timed_out_runs()` return value ≥ 1
+- [ ] Script exits 0
+
+**Background daemon test (optional manual):**
+```bash
+# Start the daemon (auto-checks every 10 s)
+python ~/competitions/scoreboard/manage.py timeout_runs --interval 10 &
+
+# Create a run with timeout_seconds=12 in admin, start it, wait 15 s
+# Verify its state changes to VOIDED in admin or shell
+```
+
+---
+
+### S16 — Device Self-Registration (automated)
+
+**Goal:** A device POSTs to `/devices/register/` and starts as PENDING; admin
+approval transitions it to ACTIVE; re-registration preserves the ACTIVE status.
+
+**Run:**
+```bash
+python ../tests/run_server_complete_scenarios.py --scenario S16
+```
+
+**Verify:**
+- [ ] POST → 201 Created, `registration_status=PENDING`
+- [ ] Re-register (update friendly name) → 200, status preserved as ACTIVE
+- [ ] Script exits 0
+
+---
+
+### S17 — MQTT Fallback / Manual Mode (automated)
+
+**Goal:** When the MQTT broker disconnects, all ACTIVE runs are voided; judges
+can then post manual results via the Manual Entry form.
+
+**Run:**
+```bash
+python ../tests/run_server_complete_scenarios.py --scenario S17
+```
+
+**Verify:**
+- [ ] `void_active_runs_on_disconnect()` voids all ACTIVE runs
+- [ ] TIMED manual entry: `Result.score=8500`, `is_manual=True`
+- [ ] JUDGED manual entry: `Result.score=77`, `is_manual=True`
+- [ ] Script exits 0
+
+**Manual UI test (optional):**
+1. Start a run, verify it is ACTIVE in admin.
+2. Kill mqtt_bridge; the run should become VOIDED automatically.
+3. Open the runs page; the VOIDED run card should show the Manual Entry form.
+4. Fill in time (TIMED) or score (JUDGED) and submit.
+5. Verify Result appears in the results table with an "(M)" indicator.
+
+---
+
+### S18 — Robot receives START/STOP commands (manual, live MQTT)
+
+**Goal:** Start the robot simulator and verify it receives `START` and `STOP`
+commands from the competition server via MQTT.
+
+**Prerequisites:** mqtt_bridge running, competition exists in DB.
+
+**Terminal A — mqtt_bridge:**
+```bash
+ssh competitions_dev
+source ~/venv/bin/activate
+python ~/competitions/scoreboard/manage.py mqtt_bridge
+```
+
+**Terminal B — robot simulator:**
+```bash
+source ~/venv/bin/activate
+export MQTT_USERNAME=deviceusr
+export MQTT_PASSWORD=devicepass
+python ~/competitions/tests/robot_sim.py \
+  --mac 11:22:33:44:55:01 --competition <cat_id>
+```
+
+**Steps:**
+1. In browser: open competition, create a run for a team, click **Start**.
+2. Observe Terminal B.
+
+**Verify:**
+- [ ] Robot sim logs `>>> START received (source=competition, run_id=<id>) <<<`
+- [ ] Click **Void** (or let timeout fire): robot sim logs `>>> STOP received <<<`
+- [ ] No error messages in mqtt_bridge terminal
+
+---
+
+### S19 — Robot + lap timer end-to-end (manual, live MQTT)
+
+**Goal:** Robot receives START via MQTT; lap timer fires N beam-crossings; server
+records `time_ms`; scoreboard updates via WebSocket.
+
+**Terminal A — mqtt_bridge (running)**
+**Terminal B — lap timer sim:**
+```bash
+python ~/competitions/tests/lap_timer_sim.py \
+  --mac AA:BB:CC:DD:EE:01 --competition <cat_id> --laps 1 --sequence "2,6"
+```
+
+**Terminal C — robot sim:**
+```bash
+python ~/competitions/tests/robot_sim.py \
+  --mac 11:22:33:44:55:01 --competition <cat_id>
+```
+
+**Steps:**
+1. Open competition board in browser.
+2. Create and start a run. Verify robot sim logs `START`.
+3. Fire lap crossings from Terminal B.
+4. Observe the board update in the browser.
+
+**Verify:**
+- [ ] Robot sim logs START
+- [ ] Lap timer sim fires the correct number of crossings
+- [ ] Run state transitions to COMPLETED
+- [ ] `time_ms` recorded correctly
+- [ ] Browser scoreboard updates without refresh
+
+---
+
+### S20 — Multi-robot simultaneous START (manual, live MQTT)
+
+**Goal:** Two robot simulators both receive the `START` command simultaneously
+when a run is started (competition-level broadcast).
+
+**Terminal B — robot 1:**
+```bash
+python ~/competitions/tests/robot_sim.py --mac 11:22:33:44:55:01 --competition <cat_id>
+```
+
+**Terminal C — robot 2:**
+```bash
+python ~/competitions/tests/robot_sim.py --mac 11:22:33:44:55:02 --competition <cat_id>
+```
+
+**Steps:**
+1. Start a run in browser.
+2. Observe both terminals.
+
+**Verify:**
+- [ ] Both robot sims log `>>> START received <<<` within the same second
+- [ ] Both receive the same `run_id` in the payload
+- [ ] No duplicate messages / infinite loops in either terminal
+
+---
+
+## Execution Order Summary — S11–S20
+
+```
+Automated (no broker/browser needed):
+  S11 → python tests/run_ranking_scenarios.py --all       (all 3 ranking scenarios)
+  S15, S16, S17 → python tests/run_server_complete_scenarios.py --all
+
+Manual (browser + MQTT):
+  S14  — WebSocket live push   (browser + any run completion)
+  S18  — Robot receives START/STOP (mqtt_bridge + robot_sim.py)
+  S19  — Robot + lap timer E2E  (mqtt_bridge + lap_timer_sim.py + robot_sim.py)
+  S20  — Multi-robot START      (mqtt_bridge + 2× robot_sim.py)
+```
+
+**All S1–S20 complete when:**
+- [ ] S1–S10 passed (previous sign-off 2026-06-27)
+- [ ] S11–S13 automated scripts exit 0
+- [ ] S15–S17 automated scripts exit 0
+- [ ] S14 verified manually in browser
+- [ ] S18–S20 verified manually with live MQTT

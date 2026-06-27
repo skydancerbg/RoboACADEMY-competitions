@@ -90,7 +90,7 @@ def index(request):
 def robot_action(request):
     # check request
     req = {}
-    if request.type != "POST":
+    if request.method != "POST":
         raise BadRequest()
     try:
         # parse request
@@ -113,7 +113,7 @@ def robot_action(request):
     competition = Competition.objects.get(token=req["competitiontoken"])
     if competition is None:
         raise PermissionDenied()
-    runs = Run.objects.filter(team_id=team.id,competition_id=competition.id).order_by("-start_time").limit(1)
+    runs = Run.objects.filter(team_id=team.id,competition_id=competition.id).order_by("-start_time")[:1]
     is_running = False
     last_run = None
     response = "error"

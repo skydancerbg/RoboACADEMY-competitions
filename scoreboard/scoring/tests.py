@@ -798,3 +798,131 @@ class OverallRankingAutoUpdateTest(TestCase):
         ra.refresh_from_db()
         self.assertTrue(ra.is_eligible)
         self.assertEqual(ra.rank, 1)
+
+# ── Phase 5.8: Auto-timeout tests ─────────────────────────────────────────────
+
+import secrets as _secrets
+from datetime import timedelta
+
+from django.utils import timezone
+
+from scoring.engine import check_and_void_timed_out_runs
+
+
+class AutoTimeoutTest(TestCase):
+    """check_and_void_timed_out_runs correctly voids overdue ACTIVE TIMED runs."""
+
+    def setUp(self):
+        self.device = make_device(mac='BB:CC:DD:EE:FF:01')
+        self.contest = Contest.objects.create(name='Timeout Cup')
+        self.comp = Competition.objects.create(
+            name='LF', contest=self.contest,
+            competition_type=CompetitionType.TIMED,
+            timeout_seconds=30, num_laps=1,
+            lap_timer=self.device,
+            token=_secrets.token_hex(8),
+        )
+        self.team = Team.objects.create(name='Alpha', contest=self.contest, token=None)
+
+    def _active_run(self, seconds_ago):
+        """Create an ACTIVE run that started `seconds_ago` seconds in the past."""
+        return Run.objects.create(
+            team=self.team, competition=self.comp,
+            start_time=timezone.now() - timedelta(seconds=seconds_ago),
+            duration=0, state=RunState.ACTIVE,
+        )
+
+    def test_overdue_run_is_voided(self):
+        run = self._active_run(seconds_ago=60)  # 60s > 30s timeout
+        check_and_void_timed_out_runs()
+        run.refresh_from_db()
+        self.assertEqual(run.state, RunState.VOIDED)
+
+    def test_not_yet_overdue_run_stays_active(self):
+        run = self._active_run(seconds_ago=10)  # 10s < 30s timeout
+        check_and_void_timed_out_runs()
+        run.refresh_from_db()
+        self.assertEqual(run.state, RunState.ACTIVE)
+
+    def test_exactly_at_deadline_is_voided(self):
+        # start_time == now - timeout_seconds → deadline == now → overdue
+        run = self._active_run(seconds_ago=30)
+        check_and_void_timed_out_runs()
+        run.refresh_from_db()
+        self.assertEqual(run.state, RunState.VOIDED)
+
+    def test_returns_count_of_voided_runs(self):
+        self._active_run(seconds_ago=60)
+        self._active_run(seconds_ago=60)
+        count = check_and_void_timed_out_runs()
+        self.assertEqual(count, 2)
+
+    def test_returns_zero_when_nothing_overdue(self):
+        self._active_run(seconds_ago=10)
+        count = check_and_void_timed_out_runs()
+        self.assertEqual(count, 0)
+
+    def test_judged_run_not_auto_voided(self):
+        judged_comp = Competition.objects.create(
+            name='Arm', contest=self.contest,
+            competition_type=CompetitionType.JUDGED,
+            timeout_seconds=10, token=_secrets.token_hex(8),
+        )
+        run = Run.objects.create(
+            team=self.team, competition=judged_comp,
+            start_time=timezone.now() - timedelta(seconds=60),
+            duration=0, state=RunState.ACTIVE,
+        )
+        check_and_void_timed_out_runs()
+        run.refresh_from_db()
+        self.assertEqual(run.state, RunState.ACTIVE)
+
+    def test_completed_run_not_re_voided(self):
+        run = self._active_run(seconds_ago=60)
+        run.state = RunState.COMPLETED
+        run.time_ms = 5000
+        run.save()
+        check_and_void_timed_out_runs()
+        run.refresh_from_db()
+        self.assertEqual(run.state, RunState.COMPLETED)
+
+    def test_already_voided_run_not_re_processed(self):
+        run = self._active_run(seconds_ago=60)
+        run.state = RunState.VOIDED
+        run.save()
+        count = check_and_void_timed_out_runs()
+        self.assertEqual(count, 0)
+
+    def test_pending_run_not_voided(self):
+        # PENDING runs are not ACTIVE so must not be touched
+        run = Run.objects.create(
+            team=self.team, competition=self.comp,
+            start_time=timezone.now() - timedelta(seconds=60),
+            duration=0, state=RunState.PENDING,
+        )
+        check_and_void_timed_out_runs()
+        run.refresh_from_db()
+        self.assertEqual(run.state, RunState.PENDING)
+
+    def test_different_timeout_per_competition(self):
+        # comp has timeout=30; comp2 has timeout=120
+        comp2 = Competition.objects.create(
+            name='LF2', contest=self.contest,
+            competition_type=CompetitionType.TIMED,
+            timeout_seconds=120, num_laps=1,
+            token=_secrets.token_hex(8),
+        )
+        run1 = self._active_run(seconds_ago=60)   # overdue (30s timeout)
+        run2 = Run.objects.create(
+            team=self.team, competition=comp2,
+            start_time=timezone.now() - timedelta(seconds=60),
+            duration=0, state=RunState.ACTIVE,
+        )
+
+        count = check_and_void_timed_out_runs()
+        self.assertEqual(count, 1)
+
+        run1.refresh_from_db()
+        run2.refresh_from_db()
+        self.assertEqual(run1.state, RunState.VOIDED)
+        self.assertEqual(run2.state, RunState.ACTIVE)

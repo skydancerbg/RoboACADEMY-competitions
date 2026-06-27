@@ -1,3 +1,7 @@
+from datetime import timedelta
+
+from django.utils import timezone
+
 from contest.models import Competition, CompetitionType, Result, Run, RunState, Team
 from devices.models import LapEvent
 
@@ -63,6 +67,41 @@ def score_judged_run(run, score, comment=''):
     run.state         = RunState.COMPLETED
     run.save(update_fields=['score', 'judge_comment', 'state'])
     _update_best_judged_result(run)
+    push_competition_update(run.competition_id)
+
+
+def check_and_void_timed_out_runs():
+    """
+    Find every ACTIVE TIMED run whose start_time + timeout_seconds has passed
+    and void it. Returns the count of runs voided.
+    """
+    now = timezone.now()
+    active_timed = list(
+        Run.objects.filter(
+            state=RunState.ACTIVE,
+            competition__competition_type=CompetitionType.TIMED,
+        ).select_related('competition')
+    )
+    count = 0
+    for run in active_timed:
+        deadline = run.start_time + timedelta(seconds=run.competition.timeout_seconds)
+        if now >= deadline:
+            _void_timed_out_run(run)
+            count += 1
+    return count
+
+
+def _void_timed_out_run(run):
+    """Void a single timed-out ACTIVE run and notify via MQTT + WebSocket."""
+    run.state = RunState.VOIDED
+    run.save(update_fields=['state'])
+
+    try:
+        from mqtt_bridge.publisher import publish_competition_command
+        publish_competition_command(run.competition.id, 'STOP')
+    except Exception:
+        pass
+
     push_competition_update(run.competition_id)
 
 

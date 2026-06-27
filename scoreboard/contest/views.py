@@ -1,145 +1,240 @@
-from django.shortcuts import render
-from django.http import Http404
-from django.shortcuts import render
-from django.core.exceptions import PermissionDenied, ValidationError,BadRequest
-
-from django.db.models import Max
-from .models import Competition,Contest,Run,Team,ItemStates,Result
 import collections
 import json
 
+from django.core.exceptions import BadRequest, PermissionDenied, ValidationError
+from django.db.models import Max
+from django.http import Http404, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+from django.views.decorators.http import require_POST
 
-# ...
-def competition_board(request, competition_id):
-    try:
-        competition = Competition.objects.get(pk=competition_id)
-        results = Result.objects.filter(competition_id=competition_id).order_by("score").select_related()
-        pr = Run.objects.values("team_id").annotate(max_score=Max("score")).filter(competition_id=competition_id)
-        preliminary_results = []
-        for r in pr:
-            tn = Team.objects.get(id=r["team_id"])
-            preliminary_results.append({"team_id":r["team_id"],"team_name":tn.name,"max_score":r["max_score"]})
+from .models import (
+    Competition, CompetitionType, Contest, ItemStates, Result, Run, RunState, Team,
+)
 
-        runs = Run.objects.filter(competition_id=competition.id).order_by("-score","team__name","start_time")
-    except Competition.DoesNotExist:
-        raise Http404("Competition does not exist")
-    return render(request, 'contest/competition_board.html', {"contest":competition.contest,'competition': competition,"runs":runs,"preliminary_results":preliminary_results,"results":results})
 
-def contest_competitions(request,contest_id):
-    contest = Contest.objects.get(pk=contest_id)
-    # TODO sort
-    competitions = Competition.objects.filter(contest_id=contest_id,status__in=["OPEN","CLOSED"])
-    teams = Team.objects.filter(contest_id=contest_id)
-    #team_table = []
-    over = []
-    i2t = {}
-    i2c = {}
-    over = collections.defaultdict(dict)
-    # results of teams in competitions
+def index(request):
+    contests = list(Contest.objects.all())
+    active_contests = filter(lambda x: x.status == ItemStates.OPEN, contests)
+    past_contests   = filter(lambda x: x.status == ItemStates.CLOSED, contests)
+    return render(request, 'contest/index.html', {
+        'active_contests': active_contests,
+        'past_contests': past_contests,
+    })
+
+
+def contest_competitions(request, contest_id):
+    contest      = Contest.objects.get(pk=contest_id)
+    competitions = Competition.objects.filter(contest_id=contest_id, status__in=['OPEN', 'CLOSED'])
+    teams        = Team.objects.filter(contest_id=contest_id)
+
+    over    = collections.defaultdict(dict)
+    running = collections.defaultdict(dict)
+
     for team in teams:
         for result in team.result_set.all():
             over[team.id][result.competition.id] = result.score
 
-    # get preliminary results - best runs for each team and each running competition
-    running = collections.defaultdict(dict)
-    for competition in competitions: 
-        if competition.status != "OPEN":
+    for competition in competitions:
+        if competition.status != 'OPEN':
             continue
-        pr = Run.objects.values("team_id").annotate(max_score=Max("score")).filter(competition_id=competition.id)
+        pr = Run.objects.values('team_id').annotate(max_score=Max('score')).filter(competition_id=competition.id)
         for r in pr:
-            running[r["team_id"]][competition.id] = r["max_score"]
-    # transform matrix into table
+            running[r['team_id']][competition.id] = r['max_score']
+
     table = []
-    # one row for each team
     for team in teams:
         line = []
-        # one column for each competition
-        for competition in competitions: 
-            # Final results from judges
-            if competition.id in over[team.id] and competition.status == "CLOSED":
+        for competition in competitions:
+            if competition.id in over[team.id] and competition.status == 'CLOSED':
                 line.append(over[team.id][competition.id])
-            # preliminary results from runs
-            elif competition.id in running[team.id] and competition.status == "OPEN":
+            elif competition.id in running[team.id] and competition.status == 'OPEN':
                 line.append(running[team.id][competition.id])
             else:
                 line.append(None)
-        table.append({"team":team,"results":line})
-    return render(request,"contest/competitions.html",{"contest":contest,"teams":teams,"competitions":competitions,"table":table})
+        table.append({'team': team, 'results': line})
+
+    return render(request, 'contest/competitions.html', {
+        'contest': contest,
+        'teams': teams,
+        'competitions': competitions,
+        'table': table,
+    })
 
 
-def contest_team(request,team_id):
+def contest_team(request, team_id):
     team = Team.objects.get(pk=team_id)
-    competitions = []
-    return render(request,"contest/teams.html",{"contest":team.contest,"team":team,"competitions":competitions})
+    return render(request, 'contest/teams.html', {
+        'contest': team.contest,
+        'team': team,
+        'competitions': [],
+    })
 
-def index(request):
-    contests = list(Contest.objects.all())
-    active_contests = filter(lambda x:x.status == ItemStates.OPEN ,contests)
-    past_contests = filter(lambda x:x.status == ItemStates.CLOSED,contests)
-    return render(request,"contest/index.html",{"active_contests":active_contests,"past_contests":past_contests})
 
-## Automated run submission
-## Request is POST json with items:
-## teamtoken = access token from team Table, set by judge
-## competitiontoken = access token from Competition table set by judge
-## action = start or stop
-## 
-## Method will search team and competition according to the token.
-## if action is start, it will create new run. It will do nothing if there is previous run with zero duration
-## if action is stop, it will search previous run with zero duration and sets its duration with current time
+def competition_board(request, competition_id):
+    try:
+        competition = Competition.objects.get(pk=competition_id)
+    except Competition.DoesNotExist:
+        raise Http404('Competition does not exist')
+
+    results = Result.objects.filter(competition_id=competition_id).order_by('score').select_related('team')
+    runs    = Run.objects.filter(competition_id=competition_id).order_by('team__name', 'start_time').select_related('team')
+
+    if competition.competition_type == CompetitionType.TIMED:
+        preliminary_results = _timed_preliminary(competition_id)
+    else:
+        preliminary_results = _judged_preliminary(competition_id)
+
+    teams       = Team.objects.filter(contest=competition.contest)
+    run_counts  = {t.id: runs.filter(team=t).count() for t in teams}
+    available_teams = [t for t in teams if run_counts[t.id] < competition.num_runs]
+
+    return render(request, 'contest/competition_board.html', {
+        'contest': competition.contest,
+        'competition': competition,
+        'runs': runs,
+        'preliminary_results': preliminary_results,
+        'results': results,
+        'available_teams': available_teams,
+    })
+
+
+def _timed_preliminary(competition_id):
+    best_runs = Run.objects.filter(
+        competition_id=competition_id,
+        state=RunState.COMPLETED,
+        is_best=True,
+        time_ms__isnull=False,
+    ).select_related('team').order_by('time_ms')
+    results = []
+    for run in best_runs:
+        total = (run.time_ms or 0) + run.penalty_time_ms
+        results.append({
+            'team_id':    run.team.id,
+            'team_name':  run.team.name,
+            'best_time_ms': total,
+        })
+    return results
+
+
+def _judged_preliminary(competition_id):
+    pr = Run.objects.values('team_id').annotate(max_score=Max('score')).filter(competition_id=competition_id)
+    results = []
+    for r in pr:
+        tn = Team.objects.get(id=r['team_id'])
+        results.append({'team_id': r['team_id'], 'team_name': tn.name, 'max_score': r['max_score']})
+    return results
+
+
+# ── Judge run actions ──────────────────────────────────────────────────────────
+
+@require_POST
+def run_create(request, competition_id):
+    """Create a PENDING run for a team. Judge selects team from form."""
+    competition = get_object_or_404(Competition, pk=competition_id)
+    team_id = request.POST.get('team_id')
+    team    = get_object_or_404(Team, pk=team_id, contest=competition.contest)
+
+    run_count = Run.objects.filter(team=team, competition=competition).count()
+    if run_count >= competition.num_runs:
+        return JsonResponse({'error': 'Run limit reached for this team'}, status=400)
+
+    Run.objects.create(
+        team=team,
+        competition=competition,
+        start_time=timezone.now(),
+        duration=0,
+        state=RunState.PENDING,
+    )
+    return redirect('contest:competition_board', competition_id=competition_id)
+
+
+@require_POST
+def run_start(request, run_id):
+    """Activate a PENDING run and publish MQTT START."""
+    run = get_object_or_404(Run.objects.select_related('competition'), pk=run_id)
+
+    if run.state != RunState.PENDING:
+        return JsonResponse({'error': f'Run is {run.state}, expected PENDING'}, status=400)
+
+    run.state      = RunState.ACTIVE
+    run.start_time = timezone.now()
+    run.save(update_fields=['state', 'start_time'])
+
+    try:
+        from mqtt_bridge.publisher import publish_competition_command
+        publish_competition_command(run.competition.id, 'START', run_id=run.id)
+    except Exception:
+        pass  # MQTT failure is non-fatal; run remains ACTIVE
+
+    return JsonResponse({'status': 'started', 'run_id': run.id})
+
+
+@require_POST
+def run_stop(request, run_id):
+    """Void an ACTIVE run and publish MQTT STOP."""
+    run = get_object_or_404(Run.objects.select_related('competition'), pk=run_id)
+
+    if run.state != RunState.ACTIVE:
+        return JsonResponse({'error': f'Run is {run.state}, expected ACTIVE'}, status=400)
+
+    run.state = RunState.VOIDED
+    run.save(update_fields=['state'])
+
+    try:
+        from mqtt_bridge.publisher import publish_competition_command
+        publish_competition_command(run.competition.id, 'STOP')
+    except Exception:
+        pass
+
+    return JsonResponse({'status': 'voided', 'run_id': run.id})
+
+
+# ── Legacy robot API ───────────────────────────────────────────────────────────
+
 def robot_action(request):
-    # check request
+    from datetime import datetime
     req = {}
-    if request.method != "POST":
+    if request.method != 'POST':
         raise BadRequest()
     try:
-        # parse request
         req = json.loads(request.body)
-    except:
+    except Exception:
         raise BadRequest()
-    # validate request
-    if "teamtoken" not in req:
+    if 'teamtoken' not in req or 'competitiontoken' not in req or 'action' not in req:
         raise ValidationError()
-    if "competitiontoken" not in req:
+    if req['action'] not in {'start', 'stop'}:
         raise ValidationError()
-    if "action" not in req:
-        raise ValidationError()
-    if req["action"] not in set(["start","stop"]):
-        raise ValidationError()
-    # execute request
-    team = Team.objects.get(token=req["teamtoken"])
-    if team is None:
+
+    team        = Team.objects.get(token=req['teamtoken'])
+    competition = Competition.objects.get(token=req['competitiontoken'])
+    if team is None or competition is None:
         raise PermissionDenied()
-    competition = Competition.objects.get(token=req["competitiontoken"])
-    if competition is None:
-        raise PermissionDenied()
-    runs = Run.objects.filter(team_id=team.id,competition_id=competition.id).order_by("-start_time")[:1]
+
+    runs       = Run.objects.filter(team_id=team.id, competition_id=competition.id).order_by('-start_time')[:1]
     is_running = False
-    last_run = None
-    response = "error"
+    last_run   = None
+    response   = 'error'
+
     if len(runs) == 1:
         last_run = runs[0]
         if last_run.duration == 0:
             is_running = True
-    if req["action"] == "start":
+
+    if req['action'] == 'start':
         if is_running:
-            response = "already_running"
-        elif last_run is not None:
-            run = Run(start_time=datetime.now(),team=team,competition=competition)
+            response = 'already_running'
+        else:
+            run = Run(start_time=datetime.now(), team=team, competition=competition, duration=0)
             run.save()
-            response = "started: " + run.start_time.isoformat()
-    if req["action"] == "stop":
+            response = 'started: ' + run.start_time.isoformat()
+    if req['action'] == 'stop':
         if is_running:
             duration = (datetime.now() - last_run.start_time).total_seconds()
             last_run.duration = duration
             last_run.save()
-            response = "end: " + str(duration)
+            response = 'end: ' + str(duration)
         else:
-            response = "not_running"
-    return json.dumps({"result":response})
+            response = 'not_running'
 
-
-
-# Create your views here.
-from . import views
-
+    return JsonResponse({'result': response})

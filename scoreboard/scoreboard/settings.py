@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "contest.apps.ContestConfig",
     "devices",
     "mqtt_bridge",
+    "scoring",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",

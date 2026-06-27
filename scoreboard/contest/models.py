@@ -85,6 +85,11 @@ class Competition(models.Model):
     num_runs = models.PositiveSmallIntegerField(
         default=3, help_text='Maximum number of runs allowed per team.'
     )
+    lap_timer = models.ForeignKey(
+        'devices.LapTimerDevice', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='competitions',
+        help_text='Lap timer device assigned to time this category (TIMED only).'
+    )
 
     class Meta:
         verbose_name        = 'Category'

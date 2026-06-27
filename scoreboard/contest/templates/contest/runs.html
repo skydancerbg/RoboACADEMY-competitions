@@ -1,22 +1,49 @@
+{% load time_filters %}
 <table>
-    {% if runs %}
+  {% if runs %}
   <tr>
-    <td>Name</td>
-    <td> Start</td>
-    <td> Duration </td>
-    <td> Points</td>
-    <td> Comment</td>
+    <td>Team</td>
+    <td>Start</td>
+    <td>State</td>
+    {% if competition.competition_type == 'TIMED' %}
+    <td>Raw time</td>
+    <td>Penalty (ms)</td>
+    <td>Total time</td>
+    {% else %}
+    <td>Score</td>
+    {% endif %}
+    <td>Best</td>
+    <td>Comment</td>
+    {% if competition.competition_type == 'TIMED' and competition.status == 'OPEN' %}
+    <td>Action</td>
+    {% endif %}
   </tr>
   {% for item in runs %}
-  <tr>
+  <tr{% if item.is_best %} style="font-weight:bold"{% endif %}>
     <td>{{ item.team.name }}</td>
-    <td>{{ item.start_time }}</td>
-    <td>{% if item.duration %} {{ item.duration|floatformat:2 }} {% else %} running {% endif %}</td>
-    <td>{% if item.score %} {{ item.score|floatformat:2 }} {% else %} no evaluation {% endif %}</td>
+    <td>{{ item.start_time|date:"H:i:s" }}</td>
+    <td>{{ item.get_state_display }}</td>
+    {% if competition.competition_type == 'TIMED' %}
+    <td>{{ item.time_ms|format_ms }}</td>
+    <td>{{ item.penalty_time_ms }}</td>
+    <td>{% if item.time_ms %}{% with item.time_ms|add:item.penalty_time_ms as total %}{{ total|format_ms }}{% endwith %}{% else %}&mdash;{% endif %}</td>
+    {% else %}
+    <td>{% if item.score %}{{ item.score }}{% else %}&mdash;{% endif %}</td>
+    {% endif %}
+    <td>{% if item.is_best %}&#9733;{% endif %}</td>
     <td>{{ item.judge_comment }}</td>
+    {% if competition.competition_type == 'TIMED' and competition.status == 'OPEN' %}
+    <td>
+      {% if item.state == 'PENDING' %}
+      <button onclick="startRun({{ item.id }})">Start</button>
+      {% elif item.state == 'ACTIVE' %}
+      <button onclick="stopRun({{ item.id }})">Void</button>
+      {% endif %}
+    </td>
+    {% endif %}
   </tr>
   {% endfor %}
   {% else %}
-  no runs  yet
+  <tr><td colspan="9">No runs yet</td></tr>
   {% endif %}
 </table>

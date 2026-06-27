@@ -27,7 +27,7 @@ class ResultInline(Inline):
 
 class RunInline(Inline):
     model = Run
-    fields = ('team', 'start_time', 'duration', 'score', 'judge_comment', 'state', 'time_ms', 'is_best')
+    fields = ('team', 'start_time', 'duration', 'score', 'judge_comment', 'state', 'time_ms', 'penalty_time_ms', 'is_best')
 
 
 class TeamInline(Inline):
@@ -35,10 +35,10 @@ class TeamInline(Inline):
 
 
 class CompetitionAdmin(Admin):
-    list_display  = ('name', 'contest', 'competition_type', 'state', 'status', 'num_runs', 'num_laps', 'timeout_seconds')
+    list_display  = ('name', 'contest', 'competition_type', 'state', 'status', 'num_runs', 'num_laps', 'timeout_seconds', 'lap_timer')
     list_filter   = ('competition_type', 'state', 'status')
     fields        = ('name', 'description', 'contest', 'competition_type', 'state', 'status',
-                     'num_runs', 'num_laps', 'timeout_seconds', 'token')
+                     'num_runs', 'num_laps', 'timeout_seconds', 'lap_timer', 'token')
     inlines       = [ResultInline, RunInline]
 
 

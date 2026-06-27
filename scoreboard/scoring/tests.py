@@ -234,3 +234,60 @@ class UpdateBestJudgedResultTest(TestCase):
         high.refresh_from_db()
         self.assertTrue(high.is_best)
         self.assertEqual(Result.objects.get(team=self.team, competition=self.competition).score, 90)
+
+
+# ── BUG-03 regression ─────────────────────────────────────────────────────────
+
+class BUG03LapNumberPopulatedTest(TestCase):
+    """try_finalize_run must set lap_number on each LapEvent (0=start, 1=lap1, …)."""
+
+    def setUp(self):
+        self.device = make_device()
+        self.contest = make_contest()
+        self.competition = make_competition(self.contest, device=self.device, num_laps=3)
+        self.team = make_team(self.contest)
+
+    def _make_events(self, run, count, base_seq=200):
+        base_ts = timezone.now()
+        for i in range(count):
+            LapEvent.objects.create(
+                device=self.device, run=run, competition=self.competition,
+                timestamp_utc=base_ts + timedelta(seconds=i * 5),
+                sequence=base_seq + i,
+            )
+
+    def test_lap_numbers_set_after_finalize(self):
+        run = make_run(self.team, self.competition)
+        self._make_events(run, count=4)  # 3 laps + start crossing
+        try_finalize_run(run)
+        events = list(LapEvent.objects.filter(run=run).order_by('timestamp_utc'))
+        self.assertEqual(len(events), 4)
+        for expected, ev in enumerate(events):
+            self.assertEqual(
+                ev.lap_number, expected,
+                f'seq={ev.sequence} expected lap_number={expected}, got {ev.lap_number}'
+            )
+
+    def test_lap_number_zero_is_start_crossing(self):
+        run = make_run(self.team, self.competition)
+        self._make_events(run, count=4, base_seq=300)
+        try_finalize_run(run)
+        first = LapEvent.objects.filter(run=run).order_by('timestamp_utc').first()
+        self.assertEqual(first.lap_number, 0)
+
+    def test_final_crossing_has_correct_lap_number(self):
+        run = make_run(self.team, self.competition)
+        self._make_events(run, count=4, base_seq=400)
+        try_finalize_run(run)
+        last = LapEvent.objects.filter(run=run).order_by('timestamp_utc').last()
+        self.assertEqual(last.lap_number, 3)  # 3-lap run
+
+    def test_incomplete_run_leaves_lap_number_null(self):
+        run = make_run(self.team, self.competition)
+        self._make_events(run, count=2, base_seq=500)  # only 2 of 4 crossings
+        try_finalize_run(run)
+        run.refresh_from_db()
+        self.assertEqual(run.state, RunState.ACTIVE)  # not completed
+        events = LapEvent.objects.filter(run=run)
+        for ev in events:
+            self.assertIsNone(ev.lap_number)  # not set until finalized

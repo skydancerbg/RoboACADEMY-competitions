@@ -47,6 +47,10 @@ def try_finalize_run(run):
     run.state   = RunState.COMPLETED
     run.save(update_fields=['time_ms', 'state'])
 
+    for i, ev in enumerate(events[:needed]):
+        ev.lap_number = i
+    LapEvent.objects.bulk_update(events[:needed], ['lap_number'])
+
     _update_best_timed_result(run)
     return True
 

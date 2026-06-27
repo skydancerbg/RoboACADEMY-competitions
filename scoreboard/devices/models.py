@@ -60,6 +60,9 @@ class LapEvent(models.Model):
     received_at   = models.DateTimeField(
         auto_now_add=True,
         help_text='Server receive time (for latency measurement).')
+    lap_number    = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text='0=start crossing, 1=first lap, 2=second lap, etc. Set by scoring engine.')
 
     class Meta:
         unique_together = (('device', 'sequence'),)

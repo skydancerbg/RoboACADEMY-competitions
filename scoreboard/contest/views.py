@@ -38,9 +38,8 @@ def contest_competitions(request, contest_id):
     for competition in competitions:
         if competition.status != 'OPEN':
             continue
-        pr = Run.objects.values('team_id').annotate(max_score=Max('score')).filter(competition_id=competition.id)
-        for r in pr:
-            running[r['team_id']][competition.id] = r['max_score']
+        for result in Result.objects.filter(competition=competition):
+            running[result.team_id][competition.id] = result.score
 
     table = []
     for team in teams:
@@ -134,6 +133,8 @@ def _judged_preliminary(competition_id):
 def run_create(request, competition_id):
     """Create a PENDING run for a team."""
     competition = get_object_or_404(Competition, pk=competition_id)
+    if competition.status != 'OPEN':
+        return JsonResponse({'error': 'Competition is not open for new runs'}, status=400)
     team_id = request.POST.get('team_id')
     team    = get_object_or_404(Team, pk=team_id, contest=competition.contest)
 

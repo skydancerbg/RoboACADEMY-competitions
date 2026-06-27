@@ -55,6 +55,7 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 INSTALLED_APPS = [
     "contest.apps.ContestConfig",
     "devices",
+    "mqtt_bridge",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -148,3 +149,9 @@ JQUERY_URL = True
 # https://docs.djangoproject.com/en/4.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# MQTT broker settings
+MQTT_BROKER_HOST = env('MQTT_BROKER_HOST', default='10.15.20.11')
+MQTT_BROKER_PORT = env.int('MQTT_BROKER_PORT', default=51883)
+MQTT_USERNAME    = env('MQTT_USERNAME')
+MQTT_PASSWORD    = env('MQTT_PASSWORD')

@@ -47,7 +47,8 @@ class LapEvent(models.Model):
     competition   = models.ForeignKey(
         'contest.Competition', on_delete=models.CASCADE,
         related_name='lap_events',
-        help_text='Category (Competition) this event belongs to.')
+        null=True, blank=True,
+        help_text='Category assigned by scoring logic after the run. Null for raw unprocessed events.')
     run           = models.ForeignKey(
         'contest.Run', on_delete=models.SET_NULL,
         null=True, blank=True, related_name='lap_events',

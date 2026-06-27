@@ -4,3 +4,5 @@ django-smart-selects
 daphne
 Twisted[tls,http2]
 mysqlclient
+paho-mqtt>=2.0
+paho-mqtt>=2.0

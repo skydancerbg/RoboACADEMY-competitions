@@ -22,82 +22,29 @@
   {% elif competition.state == 'RUNNING' %}<strong>Running</strong>
   {% elif competition.state == 'FINISHED' %}<em>Finished</em>
   {% endif %}
+  &nbsp;|&nbsp; <span id="ws-status" title="Live update connection">&#9898;</span>
 </p>
 
-{% if competition.status == 'OPEN' %}
-
-  {% if competition.competition_type == 'JUDGED' %}
-  <div class="container">
-    <h3>
-      <span id="minute" class="time">00</span>:
-      <span id="second" class="time">00</span>:
-      <span id="msecond" class="time">00</span>
-    </h3>
-    <div class="buttons">
-      <button class="btn" id="sw-start">Start</button>
-      <button class="btn" id="sw-stop">Stop</button>
-      <button class="btn" id="sw-reset">Reset</button>
-    </div>
+{% if competition.competition_type == 'JUDGED' and competition.status == 'OPEN' %}
+<div class="container">
+  <h3>
+    <span id="minute" class="time">00</span>:
+    <span id="second" class="time">00</span>:
+    <span id="msecond" class="time">00</span>
+  </h3>
+  <div class="buttons">
+    <button class="btn" id="sw-start">Start</button>
+    <button class="btn" id="sw-stop">Stop</button>
+    <button class="btn" id="sw-reset">Reset</button>
   </div>
-  {% else %}
-  <p><em>Timing is provided by the hardware lap timer. The stopwatch is not used for timed categories.</em></p>
-  {% endif %}
-
-  {% if available_teams %}
-  <form method="post" action="{% url 'contest:run_create' competition.id %}">
-    {% csrf_token %}
-    <label for="team_id"><strong>Queue run for:</strong></label>
-    <select name="team_id" id="team_id">
-      {% for team in available_teams %}
-      <option value="{{ team.id }}">{{ team.name }}</option>
-      {% endfor %}
-    </select>
-    <button type="submit">Create Run</button>
-  </form>
-  {% endif %}
-
-<table>
-  <tr>
-    <td>Team name</td>
-    {% if competition.competition_type == 'TIMED' %}
-    {% for item in preliminary_results %}
-    <td><a href="{% url 'contest:contest_team' item.team_id %}">{{ item.team_name }}</a></td>
-    {% endfor %}
-    </tr>
-    <tr>
-    <td>Best time (ms)</td>
-    {% for item in preliminary_results %}
-    <td>{{ item.best_time_ms }}</td>
-    {% endfor %}
-    {% else %}
-    {% for item in preliminary_results %}
-    <td><a href="{% url 'contest:contest_team' item.team_id %}">{{ item.team_name }}</a></td>
-    {% endfor %}
-    </tr>
-    <tr>
-    <td>Best score</td>
-    {% for item in preliminary_results %}
-    <td>{{ item.max_score }}</td>
-    {% endfor %}
-    {% endif %}
-  </tr>
-</table>
+</div>
+{% elif competition.competition_type == 'TIMED' and competition.status == 'OPEN' %}
+<p><em>Timing is provided by the hardware lap timer. The stopwatch is not used for timed categories.</em></p>
 {% endif %}
 
-{% if competition.status == 'CLOSED' %}
-<table>
-  <tr><td>Team name</td><td>Final Score</td><td>Jury Comment</td></tr>
-  {% for item in results %}
-  <tr><td>{{item.team.name}}</td><td>{{item.score}}</td><td>{{item.comment}}</td></tr>
-  {% endfor %}
-</table>
-{% endif %}
-
-{% if competition.status == 'NEW' %}
-<p>Get ready!</p>
-{% endif %}
-
-{% include 'contest/runs.html' %}
+<div id="live-board">
+{% include 'contest/board_fragment.html' %}
+</div>
 </center>
 
 {% if competition.competition_type == 'JUDGED' and competition.status == 'OPEN' %}
@@ -137,7 +84,7 @@ async function startRun(runId) {
   const r = await fetch('/contest/run/' + runId + '/start', {
     method: 'POST', headers: {'X-CSRFToken': getCsrf()}
   });
-  if (r.ok) { location.reload(); }
+  if (r.ok) { reloadBoard(); }
   else { alert('Could not start run: ' + (await r.json()).error); }
 }
 async function stopRun(runId) {
@@ -145,9 +92,46 @@ async function stopRun(runId) {
   const r = await fetch('/contest/run/' + runId + '/stop', {
     method: 'POST', headers: {'X-CSRFToken': getCsrf()}
   });
-  if (r.ok) { location.reload(); }
+  if (r.ok) { reloadBoard(); }
   else { alert('Could not stop run: ' + (await r.json()).error); }
 }
+
+var competitionId = {{ competition.id }};
+var wsStatus = document.getElementById('ws-status');
+var reloadPending = false;
+
+function reloadBoard() {
+  if (reloadPending) return;
+  reloadPending = true;
+  fetch('/contest/competition/' + competitionId + '/fragment/')
+    .then(function(r) { return r.text(); })
+    .then(function(html) {
+      document.getElementById('live-board').innerHTML = html;
+      reloadPending = false;
+    })
+    .catch(function() { reloadPending = false; });
+}
+
+(function connectWS() {
+  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  var ws = new WebSocket(proto + '//' + location.host + '/ws/competition/' + competitionId + '/');
+
+  ws.onopen = function() {
+    wsStatus.textContent = '🟢';
+    wsStatus.title = 'Live updates connected';
+  };
+  ws.onmessage = function() {
+    reloadBoard();
+  };
+  ws.onclose = function() {
+    wsStatus.textContent = '🔴';
+    wsStatus.title = 'Live updates disconnected — reconnecting…';
+    setTimeout(connectWS, 3000);
+  };
+  ws.onerror = function() {
+    ws.close();
+  };
+})();
 </script>
 {% endif %}
 {% endblock %}

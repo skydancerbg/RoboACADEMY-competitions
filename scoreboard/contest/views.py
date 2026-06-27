@@ -283,3 +283,34 @@ def contest_ranking(request, contest_id):
         'contest': contest,
         'overall_results': overall_results,
     })
+
+def competition_board_fragment(request, competition_id):
+    """
+    Returns the live-updating portion of the competition board (runs table +
+    preliminary results) as a partial HTML snippet for XHR updates via WebSocket.
+    """
+    try:
+        competition = Competition.objects.get(pk=competition_id)
+    except Competition.DoesNotExist:
+        raise Http404('Competition does not exist')
+
+    results = Result.objects.filter(competition_id=competition_id).order_by('score').select_related('team')
+    runs    = Run.objects.filter(competition_id=competition_id).order_by('team__name', 'start_time').select_related('team')
+
+    if competition.competition_type == CompetitionType.TIMED:
+        preliminary_results = _timed_preliminary(competition_id)
+    else:
+        preliminary_results = _judged_preliminary(competition_id)
+
+    teams           = Team.objects.filter(contest=competition.contest)
+    run_counts      = {t.id: runs.filter(team=t).count() for t in teams}
+    available_teams = [t for t in teams if run_counts[t.id] < competition.num_runs]
+
+    return render(request, 'contest/board_fragment.html', {
+        'contest': competition.contest,
+        'competition': competition,
+        'runs': runs,
+        'preliminary_results': preliminary_results,
+        'results': results,
+        'available_teams': available_teams,
+    })

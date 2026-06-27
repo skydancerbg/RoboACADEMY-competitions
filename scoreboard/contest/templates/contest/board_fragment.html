@@ -1,0 +1,58 @@
+{% load time_filters %}
+{% if competition.status == 'OPEN' %}
+
+  {% if available_teams %}
+  <form method="post" action="{% url 'contest:run_create' competition.id %}">
+    {% csrf_token %}
+    <label for="team_id"><strong>Queue run for:</strong></label>
+    <select name="team_id" id="team_id">
+      {% for team in available_teams %}
+      <option value="{{ team.id }}">{{ team.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Create Run</button>
+  </form>
+  {% endif %}
+
+<table>
+  <tr>
+    <td>Team name</td>
+    {% if competition.competition_type == 'TIMED' %}
+    {% for item in preliminary_results %}
+    <td><a href="{% url 'contest:contest_team' item.team_id %}">{{ item.team_name }}</a></td>
+    {% endfor %}
+    </tr>
+    <tr>
+    <td>Best time (ms)</td>
+    {% for item in preliminary_results %}
+    <td>{{ item.best_time_ms }}</td>
+    {% endfor %}
+    {% else %}
+    {% for item in preliminary_results %}
+    <td><a href="{% url 'contest:contest_team' item.team_id %}">{{ item.team_name }}</a></td>
+    {% endfor %}
+    </tr>
+    <tr>
+    <td>Best score</td>
+    {% for item in preliminary_results %}
+    <td>{{ item.max_score }}</td>
+    {% endfor %}
+    {% endif %}
+  </tr>
+</table>
+{% endif %}
+
+{% if competition.status == 'CLOSED' %}
+<table>
+  <tr><td>Team name</td><td>Final Score</td><td>Jury Comment</td></tr>
+  {% for item in results %}
+  <tr><td>{{item.team.name}}</td><td>{{item.score}}</td><td>{{item.comment}}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if competition.status == 'NEW' %}
+<p>Get ready!</p>
+{% endif %}
+
+{% include 'contest/runs.html' %}

@@ -11,6 +11,7 @@ urlpatterns = [
     path('team/<int:team_id>', views.contest_team, name='contest_team'),
     path('competition_board/<int:competition_id>', views.competition_board, name='competition_board'),
     path('competition/<int:competition_id>/run/create', views.run_create, name='run_create'),
+    path('competition/<int:competition_id>/fragment/', views.competition_board_fragment, name='competition_board_fragment'),
     path('run/<int:run_id>/start', views.run_start, name='run_start'),
     path('run/<int:run_id>/stop', views.run_stop, name='run_stop'),
     path('run/<int:run_id>/score', views.run_score, name='run_score'),

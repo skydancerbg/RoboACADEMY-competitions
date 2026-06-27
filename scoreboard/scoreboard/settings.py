@@ -53,6 +53,8 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # Application definition
 
 INSTALLED_APPS = [
+    "daphne",
+    "channels",
     "contest.apps.ContestConfig",
     "devices",
     "mqtt_bridge",
@@ -96,6 +98,14 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "scoreboard.wsgi.application"
+
+ASGI_APPLICATION = 'scoreboard.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
 
 
 # Database

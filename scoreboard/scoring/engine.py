@@ -52,6 +52,7 @@ def try_finalize_run(run):
     LapEvent.objects.bulk_update(events[:needed], ['lap_number'])
 
     _update_best_timed_result(run)
+    push_competition_update(run.competition_id)
     return True
 
 
@@ -62,6 +63,7 @@ def score_judged_run(run, score, comment=''):
     run.state         = RunState.COMPLETED
     run.save(update_fields=['score', 'judge_comment', 'state'])
     _update_best_judged_result(run)
+    push_competition_update(run.competition_id)
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -204,6 +206,21 @@ def _update_overall_ranking(competition):
 
     for rank, team in enumerate(eligible, start=1):
         OverallResult.objects.filter(contest=contest, team=team).update(rank=rank)
+
+
+def push_competition_update(competition_id):
+    """Push a WebSocket update to all clients watching this competition board."""
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        channel_layer = get_channel_layer()
+        if channel_layer is not None:
+            async_to_sync(channel_layer.group_send)(
+                f'competition_{competition_id}',
+                {'type': 'competition.update', 'competition_id': competition_id},
+            )
+    except Exception:
+        pass
 
 
 # Keep old name as alias so existing callers (signals) still work

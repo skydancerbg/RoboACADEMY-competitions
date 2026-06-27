@@ -194,3 +194,100 @@ class RunScoreValidationTest(TestCase):
         run.refresh_from_db()
         self.assertEqual(run.score, 75)
         self.assertEqual(run.state, RunState.COMPLETED)
+
+# ── Phase 5.7: WebSocket consumer + fragment view tests ───────────────────────
+
+from channels.layers import get_channel_layer
+from channels.testing import WebsocketCommunicator
+from django.test import SimpleTestCase
+
+from scoreboard.asgi import application as asgi_app
+
+
+class CompetitionConsumerConnectTest(SimpleTestCase):
+    """Consumer accepts connections and joins the competition group."""
+
+    async def test_consumer_connects(self):
+        communicator = WebsocketCommunicator(asgi_app, '/ws/competition/1/')
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+        await communicator.disconnect()
+
+    async def test_consumer_accepts_different_competition_ids(self):
+        c1 = WebsocketCommunicator(asgi_app, '/ws/competition/1/')
+        c2 = WebsocketCommunicator(asgi_app, '/ws/competition/99/')
+        ok1, _ = await c1.connect()
+        ok2, _ = await c2.connect()
+        self.assertTrue(ok1)
+        self.assertTrue(ok2)
+        await c1.disconnect()
+        await c2.disconnect()
+
+    async def test_consumer_receives_competition_update(self):
+        communicator = WebsocketCommunicator(asgi_app, '/ws/competition/42/')
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            'competition_42',
+            {'type': 'competition.update', 'competition_id': 42},
+        )
+
+        response = await communicator.receive_json_from(timeout=2)
+        self.assertEqual(response['competition_id'], 42)
+        await communicator.disconnect()
+
+    async def test_update_not_delivered_to_wrong_competition(self):
+        c1 = WebsocketCommunicator(asgi_app, '/ws/competition/1/')
+        c2 = WebsocketCommunicator(asgi_app, '/ws/competition/2/')
+        await c1.connect()
+        await c2.connect()
+
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            'competition_1',
+            {'type': 'competition.update', 'competition_id': 1},
+        )
+
+        msg = await c1.receive_json_from(timeout=2)
+        self.assertEqual(msg['competition_id'], 1)
+        self.assertTrue(await c2.receive_nothing(timeout=0.5))
+
+        await c1.disconnect()
+        await c2.disconnect()
+
+
+class BoardFragmentViewTest(TestCase):
+    """competition_board_fragment view returns 200 with run table HTML."""
+
+    def setUp(self):
+        self.contest = Contest.objects.create(name='Frag Test Cup')
+        self.comp = Competition.objects.create(
+            name='Frag Cat', contest=self.contest,
+            competition_type=CompetitionType.TIMED, num_laps=1,
+            status=ItemStates.OPEN, token=_tok(),
+        )
+        self.team = Team.objects.create(name='Team A', contest=self.contest, token=None)
+
+    def test_fragment_returns_200(self):
+        r = self.client.get(f'/contest/competition/{self.comp.id}/fragment/')
+        self.assertEqual(r.status_code, 200)
+
+    def test_fragment_contains_team_name_in_dropdown(self):
+        r = self.client.get(f'/contest/competition/{self.comp.id}/fragment/')
+        self.assertContains(r, 'Team A')
+
+    def test_fragment_404_for_unknown_competition(self):
+        r = self.client.get('/contest/competition/99999/fragment/')
+        self.assertEqual(r.status_code, 404)
+
+    def test_fragment_shows_run_state(self):
+        from django.utils import timezone
+        Run.objects.create(
+            team=self.team, competition=self.comp,
+            start_time=timezone.now(), duration=0, state=RunState.PENDING,
+        )
+        r = self.client.get(f'/contest/competition/{self.comp.id}/fragment/')
+        self.assertContains(r, 'Team A')
+        self.assertContains(r, 'Pending')

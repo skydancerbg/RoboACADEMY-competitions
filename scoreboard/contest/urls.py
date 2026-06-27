@@ -12,5 +12,6 @@ urlpatterns = [
     path('competition/<int:competition_id>/run/create', views.run_create, name='run_create'),
     path('run/<int:run_id>/start', views.run_start, name='run_start'),
     path('run/<int:run_id>/stop', views.run_stop, name='run_stop'),
+    path('run/<int:run_id>/score', views.run_score, name='run_score'),
     path('robot_action', views.robot_action),
 ]

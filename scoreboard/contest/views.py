@@ -85,8 +85,8 @@ def competition_board(request, competition_id):
     else:
         preliminary_results = _judged_preliminary(competition_id)
 
-    teams       = Team.objects.filter(contest=competition.contest)
-    run_counts  = {t.id: runs.filter(team=t).count() for t in teams}
+    teams           = Team.objects.filter(contest=competition.contest)
+    run_counts      = {t.id: runs.filter(team=t).count() for t in teams}
     available_teams = [t for t in teams if run_counts[t.id] < competition.num_runs]
 
     return render(request, 'contest/competition_board.html', {
@@ -109,16 +109,18 @@ def _timed_preliminary(competition_id):
     results = []
     for run in best_runs:
         total = (run.time_ms or 0) + run.penalty_time_ms
-        results.append({
-            'team_id':    run.team.id,
-            'team_name':  run.team.name,
-            'best_time_ms': total,
-        })
+        results.append({'team_id': run.team.id, 'team_name': run.team.name, 'best_time_ms': total})
     return results
 
 
 def _judged_preliminary(competition_id):
-    pr = Run.objects.values('team_id').annotate(max_score=Max('score')).filter(competition_id=competition_id)
+    pr = (
+        Run.objects
+        .filter(competition_id=competition_id, state=RunState.COMPLETED, score__isnull=False)
+        .values('team_id')
+        .annotate(max_score=Max('score'))
+        .order_by('-max_score')
+    )
     results = []
     for r in pr:
         tn = Team.objects.get(id=r['team_id'])
@@ -130,7 +132,7 @@ def _judged_preliminary(competition_id):
 
 @require_POST
 def run_create(request, competition_id):
-    """Create a PENDING run for a team. Judge selects team from form."""
+    """Create a PENDING run for a team."""
     competition = get_object_or_404(Competition, pk=competition_id)
     team_id = request.POST.get('team_id')
     team    = get_object_or_404(Team, pk=team_id, contest=competition.contest)
@@ -151,7 +153,7 @@ def run_create(request, competition_id):
 
 @require_POST
 def run_start(request, run_id):
-    """Activate a PENDING run and publish MQTT START."""
+    """Activate a PENDING run. Publishes MQTT START for TIMED competitions only."""
     run = get_object_or_404(Run.objects.select_related('competition'), pk=run_id)
 
     if run.state != RunState.PENDING:
@@ -161,18 +163,19 @@ def run_start(request, run_id):
     run.start_time = timezone.now()
     run.save(update_fields=['state', 'start_time'])
 
-    try:
-        from mqtt_bridge.publisher import publish_competition_command
-        publish_competition_command(run.competition.id, 'START', run_id=run.id)
-    except Exception:
-        pass  # MQTT failure is non-fatal; run remains ACTIVE
+    if run.competition.competition_type == CompetitionType.TIMED:
+        try:
+            from mqtt_bridge.publisher import publish_competition_command
+            publish_competition_command(run.competition.id, 'START', run_id=run.id)
+        except Exception:
+            pass
 
     return JsonResponse({'status': 'started', 'run_id': run.id})
 
 
 @require_POST
 def run_stop(request, run_id):
-    """Void an ACTIVE run and publish MQTT STOP."""
+    """Void an ACTIVE run. Publishes MQTT STOP for TIMED competitions only."""
     run = get_object_or_404(Run.objects.select_related('competition'), pk=run_id)
 
     if run.state != RunState.ACTIVE:
@@ -181,13 +184,41 @@ def run_stop(request, run_id):
     run.state = RunState.VOIDED
     run.save(update_fields=['state'])
 
-    try:
-        from mqtt_bridge.publisher import publish_competition_command
-        publish_competition_command(run.competition.id, 'STOP')
-    except Exception:
-        pass
+    if run.competition.competition_type == CompetitionType.TIMED:
+        try:
+            from mqtt_bridge.publisher import publish_competition_command
+            publish_competition_command(run.competition.id, 'STOP')
+        except Exception:
+            pass
 
     return JsonResponse({'status': 'voided', 'run_id': run.id})
+
+
+@require_POST
+def run_score(request, run_id):
+    """Submit a judge's score for a JUDGED run. Marks it COMPLETED and updates best result."""
+    run = get_object_or_404(Run.objects.select_related('competition'), pk=run_id)
+
+    if run.competition.competition_type != CompetitionType.JUDGED:
+        return JsonResponse({'error': 'Score entry is only for JUDGED runs'}, status=400)
+
+    if run.state not in (RunState.PENDING, RunState.ACTIVE):
+        return JsonResponse({'error': f'Run is {run.state}, cannot score'}, status=400)
+
+    try:
+        score = int(request.POST.get('score', ''))
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'Invalid score value'}, status=400)
+
+    if not 1 <= score <= 100:
+        return JsonResponse({'error': 'Score must be between 1 and 100'}, status=400)
+
+    comment = request.POST.get('comment', '').strip()[:200]
+
+    from scoring.engine import score_judged_run
+    score_judged_run(run, score, comment)
+
+    return redirect('contest:competition_board', competition_id=run.competition.id)
 
 
 # ── Legacy robot API ───────────────────────────────────────────────────────────

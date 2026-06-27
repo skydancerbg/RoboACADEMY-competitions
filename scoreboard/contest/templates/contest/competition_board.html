@@ -34,16 +34,16 @@
       <span id="msecond" class="time">00</span>
     </h3>
     <div class="buttons">
-      <button class="btn" id="start">Start</button>
-      <button class="btn" id="stop">Stop</button>
-      <button class="btn" id="reset">Reset</button>
+      <button class="btn" id="sw-start">Start</button>
+      <button class="btn" id="sw-stop">Stop</button>
+      <button class="btn" id="sw-reset">Reset</button>
     </div>
   </div>
   {% else %}
   <p><em>Timing is provided by the hardware lap timer. The stopwatch is not used for timed categories.</em></p>
   {% endif %}
 
-  {% if competition.competition_type == 'TIMED' and available_teams %}
+  {% if available_teams %}
   <form method="post" action="{% url 'contest:run_create' competition.id %}">
     {% csrf_token %}
     <label for="team_id"><strong>Queue run for:</strong></label>
@@ -65,7 +65,7 @@
     {% endfor %}
     </tr>
     <tr>
-    <td>Best time</td>
+    <td>Best time (ms)</td>
     {% for item in preliminary_results %}
     <td>{{ item.best_time_ms }}</td>
     {% endfor %}
@@ -75,7 +75,7 @@
     {% endfor %}
     </tr>
     <tr>
-    <td>Best run score</td>
+    <td>Best score</td>
     {% for item in preliminary_results %}
     <td>{{ item.max_score }}</td>
     {% endfor %}
@@ -107,9 +107,9 @@ let second = document.getElementById('second');
 let msecond = document.getElementById('msecond');
 let min = 0, sec = 0, count = 0, timer = false;
 
-document.getElementById('start').addEventListener('click', function() { timer = true; stopwatch(); });
-document.getElementById('stop').addEventListener('click',  function() { timer = false; });
-document.getElementById('reset').addEventListener('click', function() {
+document.getElementById('sw-start').addEventListener('click', function() { timer = true; stopwatch(); });
+document.getElementById('sw-stop').addEventListener('click',  function() { timer = false; });
+document.getElementById('sw-reset').addEventListener('click', function() {
   timer = false; min = 0; sec = 0; count = 0;
   minute.textContent = '00'; second.textContent = '00'; msecond.textContent = '00';
 });
@@ -127,7 +127,7 @@ function stopwatch() {
 </script>
 {% endif %}
 
-{% if competition.competition_type == 'TIMED' and competition.status == 'OPEN' %}
+{% if competition.status == 'OPEN' %}
 <script>
 function getCsrf() {
   const v = document.cookie.match('(^|;) ?csrftoken=([^;]*)(;|$)');

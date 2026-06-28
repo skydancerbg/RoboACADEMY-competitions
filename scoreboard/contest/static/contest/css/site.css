@@ -76,7 +76,10 @@ a:hover {
 }
 
 .navbar-robosteam .erasmus-logo {
-  height: 44px;
+  height: 52px;
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 4px 8px;
 }
 
 .btn-judge-login {

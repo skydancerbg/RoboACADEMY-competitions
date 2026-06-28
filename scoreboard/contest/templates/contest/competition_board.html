@@ -1,74 +1,78 @@
 {% extends "contest/base.html" %}
+{% block title %}<title>{{ competition.name }} — RoboSTEAM Academy</title>{% endblock %}
 {% block content %}
-<center>
-<h3>{{competition.name}}</h3>
 
-<p>
-  {% if competition.competition_type == 'TIMED' %}
-    <strong>Type:</strong> Timed &mdash; {{ competition.num_laps }} lap{% if competition.num_laps != 1 %}s{% endif %},
-    {{ competition.timeout_seconds }}s timeout &nbsp;|&nbsp;
-    {% if competition.lap_timer %}
-      <strong>Timer:</strong> {{ competition.lap_timer.friendly_name }} &nbsp;|&nbsp;
-    {% else %}
-      <strong>Timer:</strong> <em>not assigned</em> &nbsp;|&nbsp;
-    {% endif %}
-  {% else %}
-    <strong>Type:</strong> Judged &nbsp;|&nbsp;
-  {% endif %}
-  <strong>Max runs per team:</strong> {{ competition.num_runs }} &nbsp;|&nbsp;
-  <strong>State:</strong>
-  {% if competition.state == 'WAITING' %}<em>Waiting</em>
-  {% elif competition.state == 'READY' %}<em>Ready to start</em>
-  {% elif competition.state == 'RUNNING' %}<strong>Running</strong>
-  {% elif competition.state == 'FINISHED' %}<em>Finished</em>
-  {% endif %}
-  &nbsp;|&nbsp; <span id="ws-status" title="Live update connection">&#9898;</span>
-</p>
+<!-- Header bar -->
+<div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+  <div>
+    <h3 class="mb-0" style="font-family:'Poppins',sans-serif;font-weight:700;">{{ competition.name }}</h3>
+    <span style="font-size:13px;color:#6b7a8d;">
+      {% if competition.competition_type == 'TIMED' %}
+        <span class="badge badge-timed me-1">Timed</span>
+        {{ competition.num_laps }} lap{% if competition.num_laps != 1 %}s{% endif %} &bull;
+        {{ competition.timeout_seconds }}s timeout
+        {% if competition.lap_timer %}
+          &bull; Timer: {{ competition.lap_timer.friendly_name }}
+        {% else %}
+          &bull; <em class="text-warning">No timer assigned</em>
+        {% endif %}
+      {% else %}
+        <span class="badge badge-judged me-1">Judged</span>
+      {% endif %}
+      &bull; Max {{ competition.num_runs }} run{% if competition.num_runs != 1 %}s{% endif %}
+      &bull; State:
+      {% if competition.state == 'WAITING' %}<span class="badge bg-secondary">Waiting</span>
+      {% elif competition.state == 'READY' %}<span class="badge badge-state-pending">Ready</span>
+      {% elif competition.state == 'RUNNING' %}<span class="badge badge-state-active">Running</span>
+      {% elif competition.state == 'FINISHED' %}<span class="badge bg-dark">Finished</span>
+      {% endif %}
+      &nbsp;<span id="ws-status" title="Live update connection" style="font-size:16px;">&#9898;</span>
+    </span>
+  </div>
+</div>
 
 {% if competition.competition_type == 'JUDGED' and competition.status == 'OPEN' %}
-<div class="container">
-  <h3>
-    <span id="minute" class="time">00</span>:
-    <span id="second" class="time">00</span>:
-    <span id="msecond" class="time">00</span>
-  </h3>
-  <div class="buttons">
-    <button class="btn" id="sw-start">Start</button>
-    <button class="btn" id="sw-stop">Stop</button>
-    <button class="btn" id="sw-reset">Reset</button>
+<div class="form-card mb-3">
+  <div class="d-flex align-items-center gap-3 flex-wrap">
+    <strong style="font-size:13px;color:#6b7a8d;">Stopwatch</strong>
+    <span class="d-flex align-items-center gap-1" style="font-family:monospace;font-size:1.3rem;color:#1a2332;">
+      <span id="minute">00</span>:<span id="second">00</span>.<span id="msecond">00</span>
+    </span>
+    <button class="btn btn-sm btn-action-primary" id="sw-start">Start</button>
+    <button class="btn btn-sm btn-action-secondary" id="sw-stop">Stop</button>
+    <button class="btn btn-sm btn-action-secondary" id="sw-reset">Reset</button>
   </div>
 </div>
 {% elif competition.competition_type == 'TIMED' and competition.status == 'OPEN' %}
-<p><em>Timing is provided by the hardware lap timer. The stopwatch is not used for timed categories.</em></p>
+<div class="alert alert-info py-2 mb-3" style="font-size:13px;">
+  &#8987; Hardware lap timer provides timing automatically. No stopwatch needed.
+</div>
 {% endif %}
 
 <div id="live-board">
 {% include 'contest/board_fragment.html' %}
 </div>
-</center>
 
 {% if competition.competition_type == 'JUDGED' and competition.status == 'OPEN' %}
 <script>
-let minute = document.getElementById('minute');
-let second = document.getElementById('second');
-let msecond = document.getElementById('msecond');
 let min = 0, sec = 0, count = 0, timer = false;
-
-document.getElementById('sw-start').addEventListener('click', function() { timer = true; stopwatch(); });
-document.getElementById('sw-stop').addEventListener('click',  function() { timer = false; });
-document.getElementById('sw-reset').addEventListener('click', function() {
+const elMin = document.getElementById('minute');
+const elSec = document.getElementById('second');
+const elMs  = document.getElementById('msecond');
+document.getElementById('sw-start').addEventListener('click', () => { timer = true; stopwatch(); });
+document.getElementById('sw-stop').addEventListener('click',  () => { timer = false; });
+document.getElementById('sw-reset').addEventListener('click', () => {
   timer = false; min = 0; sec = 0; count = 0;
-  minute.textContent = '00'; second.textContent = '00'; msecond.textContent = '00';
+  elMin.textContent = '00'; elSec.textContent = '00'; elMs.textContent = '00';
 });
-
 function stopwatch() {
   if (!timer) return;
   count++;
   if (count === 100) { sec++; count = 0; }
   if (sec === 60)    { min++; sec = 0; }
-  minute.textContent  = String(min).padStart(2, '0');
-  second.textContent  = String(sec).padStart(2, '0');
-  msecond.textContent = String(count).padStart(2, '0');
+  elMin.textContent = String(min).padStart(2,'0');
+  elSec.textContent = String(sec).padStart(2,'0');
+  elMs.textContent  = String(count).padStart(2,'0');
   setTimeout(stopwatch, 10);
 }
 </script>
@@ -95,43 +99,26 @@ async function stopRun(runId) {
   if (r.ok) { reloadBoard(); }
   else { alert('Could not stop run: ' + (await r.json()).error); }
 }
-
 var competitionId = {{ competition.id }};
 var wsStatus = document.getElementById('ws-status');
 var reloadPending = false;
-
 function reloadBoard() {
   if (reloadPending) return;
   reloadPending = true;
   fetch('/contest/competition/' + competitionId + '/fragment/')
-    .then(function(r) { return r.text(); })
-    .then(function(html) {
-      document.getElementById('live-board').innerHTML = html;
-      reloadPending = false;
-    })
-    .catch(function() { reloadPending = false; });
+    .then(r => r.text())
+    .then(html => { document.getElementById('live-board').innerHTML = html; reloadPending = false; })
+    .catch(() => { reloadPending = false; });
 }
-
 (function connectWS() {
   var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   var ws = new WebSocket(proto + '//' + location.host + '/ws/competition/' + competitionId + '/');
-
-  ws.onopen = function() {
-    wsStatus.textContent = '🟢';
-    wsStatus.title = 'Live updates connected';
-  };
-  ws.onmessage = function() {
-    reloadBoard();
-  };
-  ws.onclose = function() {
-    wsStatus.textContent = '🔴';
-    wsStatus.title = 'Live updates disconnected — reconnecting…';
-    setTimeout(connectWS, 3000);
-  };
-  ws.onerror = function() {
-    ws.close();
-  };
+  ws.onopen  = () => { wsStatus.textContent = '🟢'; wsStatus.title = 'Live updates connected'; };
+  ws.onmessage = () => { reloadBoard(); };
+  ws.onclose = () => { wsStatus.textContent = '🔴'; wsStatus.title = 'Disconnected — reconnecting…'; setTimeout(connectWS, 3000); };
+  ws.onerror = () => { ws.close(); };
 })();
 </script>
 {% endif %}
+
 {% endblock %}

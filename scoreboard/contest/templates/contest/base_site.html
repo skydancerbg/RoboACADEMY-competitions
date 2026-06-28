@@ -1,0 +1,121 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  {% block title %}<title>RoboSTEAM Academy — Competitions</title>{% endblock %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'contest/css/site.css' %}">
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+<!-- NAVBAR -->
+<nav class="navbar navbar-expand-lg navbar-robosteam sticky-top">
+  <div class="container-xl">
+    <a class="navbar-brand me-3" href="/">
+      <img src="{% static 'contest/img/robostem-academy.png' %}" alt="RoboSTEAM Academy" height="52">
+    </a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMain"
+            aria-controls="navbarMain" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarMain">
+      <ul class="navbar-nav mx-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/news/">News</a>
+        </li>
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">Contests</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="/contests/upcoming/">Upcoming Contests</a></li>
+            <li><a class="dropdown-item" href="/contest/">Past Results</a></li>
+            <li><a class="dropdown-item" href="/gallery/">Gallery</a></li>
+          </ul>
+        </li>
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">Participate</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="/pages/call-for-participation/">Call for Participation</a></li>
+            <li><a class="dropdown-item" href="/pages/how-to-build-robot/">How to Build a Robot</a></li>
+            <li><a class="dropdown-item" href="/pages/what-is-a-competition/">What is a Competition</a></li>
+            <li><a class="dropdown-item" href="/pages/register/">Register</a></li>
+          </ul>
+        </li>
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">Organize</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="/pages/organize/">How to Organize</a></li>
+            <li><a class="dropdown-item" href="/pages/competition-and-organization/">Competition &amp; Organization</a></li>
+            <li><a class="dropdown-item" href="/pages/judge-guide/">Judge Guide</a></li>
+            <li><a class="dropdown-item" href="/pages/general-rules/">General Rules</a></li>
+            <li><a class="dropdown-item" href="/pages/video-scoreboard/">Video &ndash; Scoreboard</a></li>
+          </ul>
+        </li>
+      </ul>
+      <div class="d-flex align-items-center gap-3">
+        <img src="{% static 'contest/img/erasmus-logo.png' %}" alt="Co-funded by Erasmus+" class="erasmus-logo d-none d-lg-block">
+        {% if user.is_authenticated %}
+          <span style="font-size:13px;color:#8aabb6;">{{ user.username }}</span>
+          <a href="/accounts/logout/" class="btn-judge-login">Logout</a>
+        {% else %}
+          <a href="/accounts/login/" class="btn-judge-login">Judge Login</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- PAGE CONTENT -->
+{% block page_content %}{% endblock %}
+
+<!-- FOOTER -->
+<footer class="site-footer">
+  <div class="container-xl">
+    <div class="row g-4">
+      <div class="col-md-4">
+        <img src="{% static 'contest/img/robostem-academy.png' %}" alt="RoboSTEAM Academy" height="40" class="mb-3">
+        <p style="color:#a8c8d4;font-size:13px;margin-bottom:0.25rem;">ROBO STEAM ACADEMY</p>
+        <p style="color:#8aabb6;font-size:12px;">
+          Erasmus+ KA220-VET-7CF4F308<br>
+          Partners: Bulgaria &bull; Slovakia &bull; Romania<br>
+          Oct 2024 &ndash; Sep 2027
+        </p>
+      </div>
+      <div class="col-md-4">
+        <h6>Quick Links</h6>
+        <ul>
+          <li><a href="/news/">News</a></li>
+          <li><a href="/contests/upcoming/">Upcoming Contests</a></li>
+          <li><a href="/contest/">Past Results</a></li>
+          <li><a href="/gallery/">Gallery</a></li>
+          <li><a href="/pages/participate/">How to Participate</a></li>
+          <li><a href="/pages/organize/">How to Organize</a></li>
+          <li><a href="/pages/general-rules/">General Rules</a></li>
+          <li><a href="/accounts/login/">Judge Login</a></li>
+        </ul>
+      </div>
+      <div class="col-md-4">
+        <h6>Co-funded by the European Union</h6>
+        <img src="{% static 'contest/img/erasmus-logo.png' %}" alt="Erasmus+" class="partner-logo mb-2">
+        <p style="color:#8aabb6;font-size:12px;margin-top:0.75rem;">
+          Co-funded by the Erasmus+ Programme. Views expressed do not necessarily reflect those of the European Union or the European Education and Culture Executive Agency.
+        </p>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <div class="container-xl text-center">
+      &copy; 2024&ndash;2027 RoboSTEAM Academy &mdash; Erasmus+ KA220-VET-7CF4F308
+    </div>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

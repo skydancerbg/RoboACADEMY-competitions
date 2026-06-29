@@ -2,6 +2,7 @@
 /* Design A: Dark navy navbar, teal accent, gold CTA */
 
 :root {
+  color-scheme: only light;
   --primary: #2d8fa5;
   --primary-dark: #1d5e70;
   --gold: #f5a623;

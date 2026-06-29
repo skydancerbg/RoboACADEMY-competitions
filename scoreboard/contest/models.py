@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -144,8 +145,9 @@ class Run(models.Model):
 
 class UserProfile(models.Model):
     ROLE_CHOICES = [
-        ('judge',     'Judge'),
-        ('organiser', 'Organiser'),
+        ('judge',       'Judge'),
+        ('organiser',   'Organiser'),
+        ('participant', 'Participant / Team'),
     ]
     user           = models.OneToOneField(
         'auth.User', on_delete=models.CASCADE, related_name='profile'
@@ -153,6 +155,39 @@ class UserProfile(models.Model):
     requested_role = models.CharField(max_length=16, choices=ROLE_CHOICES, default='judge')
     organisation   = models.CharField(max_length=200, blank=True)
     country        = models.CharField(max_length=100, blank=True)
+    team_name      = models.CharField(
+        max_length=100,
+        blank=True,
+        default='',
+        help_text='Team name for Participant accounts. Appears in all competition results.',
+    )
 
     def __str__(self):
         return f'Profile({self.user.username})'
+
+
+class ContestRegistration(models.Model):
+    user    = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='contest_registrations',
+    )
+    contest = models.ForeignKey(
+        'Contest',
+        on_delete=models.CASCADE,
+        related_name='registrations',
+    )
+    team    = models.OneToOneField(
+        'Team',
+        on_delete=models.CASCADE,
+        related_name='registration',
+    )
+    registered_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'contest')
+        verbose_name = 'Competition registration'
+        verbose_name_plural = 'Competition registrations'
+
+    def __str__(self):
+        return f'{self.user.username} → {self.contest.name}'

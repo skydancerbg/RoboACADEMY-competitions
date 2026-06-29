@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views, registration_views, organise_views, judge_mobile_views
+from . import views, registration_views, organise_views, judge_mobile_views, participate_views
 
 app_name = 'contest'
 
@@ -18,8 +18,16 @@ urlpatterns = [
     path('run/<int:run_id>/manual_entry', views.manual_entry, name='run_manual_entry'),
     path('robot_action', views.robot_action),
     # Registration
-    path('register/',         registration_views.register,         name='register'),
-    path('register/pending/', registration_views.register_pending, name='register_pending'),
+    path('register/',              registration_views.register,                  name='register'),
+    path('register/pending/',      registration_views.register_pending,          name='register_pending'),
+    path('register/done/',         registration_views.register_participant_done, name='register_participant_done'),
+    # Account management
+    path('account/cancel/',    views.account_cancel,    name='account_cancel'),
+    path('account/cancelled/', views.account_cancelled, name='account_cancelled'),
+    # Participant self-registration
+    path('participate/',                        participate_views.participate_dashboard, name='participate_dashboard'),
+    path('participate/join/<int:contest_id>/',  participate_views.participate_join,      name='participate_join'),
+    path('participate/leave/<int:contest_id>/', participate_views.participate_leave,     name='participate_leave'),
     # Organiser interface
     path('organise/',                                          organise_views.organise_dashboard,     name='organise_dashboard'),
     path('organise/competition/new/',                          organise_views.organise_contest_new,   name='organise_contest_new'),

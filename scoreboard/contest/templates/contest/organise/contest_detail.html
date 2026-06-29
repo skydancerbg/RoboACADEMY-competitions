@@ -57,4 +57,26 @@
     </div>
   </div>
 </div>
+
+<h5 style="font-family:'Poppins',sans-serif;margin:2rem 0 1rem;">Registered Teams</h5>
+{% if registrations %}
+<div class="table-responsive">
+  <table class="table competition-table">
+    <thead>
+      <tr><th>Team</th><th>Account</th><th>Registered</th></tr>
+    </thead>
+    <tbody>
+      {% for reg in registrations %}
+      <tr>
+        <td>{{ reg.team.name }}</td>
+        <td>{{ reg.user.username }}</td>
+        <td>{{ reg.registered_at|date:"d M Y H:i" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p style="color:#6b7a8d;">No teams registered yet.</p>
+{% endif %}
 {% endblock %}

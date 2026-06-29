@@ -1,7 +1,7 @@
 from django import forms
 from django.shortcuts import get_object_or_404, redirect, render
 
-from .models import Competition, Contest, ItemStates, Team
+from .models import Competition, Contest, ContestRegistration, ItemStates, Team
 from .views import organiser_required
 
 
@@ -31,11 +31,18 @@ def organise_contest_new(request):
 
 @organiser_required
 def organise_contest(request, contest_id):
-    contest    = get_object_or_404(Contest, pk=contest_id)
-    categories = Competition.objects.filter(contest=contest)
-    teams      = Team.objects.filter(contest=contest)
+    contest       = get_object_or_404(Contest, pk=contest_id)
+    categories    = Competition.objects.filter(contest=contest)
+    teams         = Team.objects.filter(contest=contest)
+    registrations = (
+        ContestRegistration.objects
+        .filter(contest=contest)
+        .select_related('user', 'team')
+        .order_by('registered_at')
+    )
     return render(request, 'contest/organise/contest_detail.html', {
         'contest': contest, 'categories': categories, 'teams': teams,
+        'registrations': registrations,
     })
 
 

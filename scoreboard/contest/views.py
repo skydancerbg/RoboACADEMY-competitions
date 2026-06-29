@@ -368,3 +368,21 @@ def competition_board_fragment(request, competition_id):
         'results': results,
         'available_teams': available_teams,
     })
+
+
+from django.contrib.auth import logout as auth_logout
+
+
+@login_required
+def account_cancel(request):
+    if request.method == 'POST':
+        user = request.user
+        auth_logout(request)
+        user.is_active = False
+        user.save()
+        return redirect('contest:account_cancelled')
+    return render(request, 'contest/account_cancel.html')
+
+
+def account_cancelled(request):
+    return render(request, 'contest/account_cancelled.html')

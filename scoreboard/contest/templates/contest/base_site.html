@@ -83,6 +83,13 @@
         <img src="{% static 'contest/img/erasmus-logo.png' %}?v=3" alt="Co-funded by Erasmus+" class="erasmus-logo d-none d-lg-block">
         {% if user.is_authenticated %}
           <span style="font-size:13px;color:#8aabb6;">{{ user.username }}</span>
+          {% if is_participant %}
+          <a href="{% url 'contest:participate_dashboard' %}" class="btn-judge-login"
+             style="border-color:#2d8fa5;color:#2d8fa5;">My Competitions</a>
+          {% endif %}
+          <a href="{% url 'contest:account_cancel' %}"
+             style="font-size:12px;color:#6b7a8d;text-decoration:none;"
+             title="Close your account">&#10005; Account</a>
           <a href="/accounts/logout/" class="btn-judge-login">Logout</a>
         {% else %}
           <a href="/accounts/login/" class="btn-judge-login">Judge Login</a>

@@ -7,7 +7,7 @@
       {% load static %}
       <img src="{% static 'contest/img/robostem-academy.png' %}" alt="RoboSTEAM Academy" height="52" class="mb-3">
       <h4 style="font-family:'Poppins',sans-serif;font-weight:700;color:#1a2332;">Request an Account</h4>
-      <p style="font-size:13px;color:#8aabb6;">An administrator will review and approve your account.</p>
+      <p style="font-size:13px;color:#8aabb6;">Judges and Organisers require administrator approval. Participants can log in immediately.</p>
     </div>
     {% if form.non_field_errors %}
       <div class="alert alert-danger py-2" style="font-size:14px;">{{ form.non_field_errors }}</div>
@@ -15,6 +15,16 @@
     <form method="post">
       {% csrf_token %}
       {% for field in form %}
+        {% if field.name == 'team_name' %}
+        <div class="mb-3" id="team_name_row">
+          <label class="form-label fw-semibold" style="font-size:14px;">{{ field.label }}</label>
+          {{ field }}
+          {% if field.errors %}
+            <div class="text-danger small mt-1">{{ field.errors }}</div>
+          {% endif %}
+          <div class="form-text">{{ field.help_text }}</div>
+        </div>
+        {% else %}
         <div class="mb-3">
           <label class="form-label fw-semibold" style="font-size:14px;">{{ field.label }}</label>
           {{ field }}
@@ -22,6 +32,7 @@
             <div style="color:#dc3545;font-size:13px;">{{ field.errors.0 }}</div>
           {% endif %}
         </div>
+        {% endif %}
       {% endfor %}
       <button type="submit" class="btn btn-primary-teal w-100 py-2">Submit Request</button>
     </form>
@@ -30,4 +41,15 @@
     </p>
   </div>
 </div>
+<script>
+(function() {
+  var roleEl  = document.getElementById('id_requested_role');
+  var teamRow = document.getElementById('team_name_row');
+  function toggle() {
+    teamRow.style.display = roleEl.value === 'participant' ? '' : 'none';
+  }
+  roleEl.addEventListener('change', toggle);
+  toggle();
+})();
+</script>
 {% endblock %}

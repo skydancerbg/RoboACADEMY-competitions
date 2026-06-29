@@ -4,7 +4,7 @@ from django.contrib.auth.models import User, Group
 from django.forms import TextInput, Textarea, NumberInput
 import django.db
 
-from .models import Run, Competition, Contest, Result, Team, UserProfile
+from .models import ContestRegistration, Run, Competition, Contest, Result, Team, UserProfile
 
 
 class Admin(admin.ModelAdmin):
@@ -92,6 +92,13 @@ class UserAdmin(BaseUserAdmin):
                 pass
             approved += 1
         self.message_user(request, f'{approved} user(s) approved and activated.')
+
+
+@admin.register(ContestRegistration)
+class ContestRegistrationAdmin(admin.ModelAdmin):
+    list_display  = ('user', 'contest', 'team', 'registered_at')
+    list_filter   = ('contest',)
+    raw_id_fields = ('user', 'contest', 'team')
 
 
 admin.site.unregister(User)

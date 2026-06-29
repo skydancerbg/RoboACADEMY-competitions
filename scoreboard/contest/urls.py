@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views, registration_views, organise_views
+from . import views, registration_views, organise_views, judge_mobile_views
 
 app_name = 'contest'
 
@@ -30,4 +30,9 @@ urlpatterns = [
     path('organise/team/<int:team_id>/delete/',                organise_views.organise_team_delete,   name='organise_team_delete'),
     path('organise/competition/<int:contest_id>/category/new/', organise_views.organise_category_new, name='organise_category_new'),
     path('organise/category/<int:category_id>/edit/',          organise_views.organise_category_edit, name='organise_category_edit'),
+    # Mobile judge interface
+    path('judge/',                                              judge_mobile_views.judge_select,      name='judge_select'),
+    path('judge/<int:competition_id>/',                         judge_mobile_views.judge_panel,       name='judge_panel'),
+    path('judge/<int:competition_id>/state/',                   judge_mobile_views.judge_panel_state, name='judge_panel_state'),
+    path('judge/<int:competition_id>/run/<int:run_id>/score/',  judge_mobile_views.judge_score,       name='judge_score'),
 ]

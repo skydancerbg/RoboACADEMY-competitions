@@ -1,3 +1,5 @@
+import uuid
+
 from django import forms
 from django.shortcuts import get_object_or_404, redirect, render
 
@@ -116,6 +118,7 @@ def organise_category_new(request, contest_id):
     if form.is_valid():
         cat = form.save(commit=False)
         cat.contest = contest
+        cat.token = uuid.uuid4().hex
         cat.save()
         return redirect('contest:organise_contest', contest_id=contest.id)
     return render(request, 'contest/organise/category_form.html', {

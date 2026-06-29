@@ -98,6 +98,29 @@ class OrganiserGroupAccessTest(TestCase):
         r = self.client.get(f'/contest/contest/{self.contest.id}')
         self.assertEqual(r.status_code, 200)
 
+    def test_create_two_categories_no_token_collision(self):
+        """BUG-04 regression: second category must not raise IntegrityError on token."""
+        url = f'/contest/organise/competition/{self.contest.id}/category/new/'
+        data = {
+            'name': 'Cat A',
+            'competition_type': 'TIMED',
+            'status': 'NEW',
+            'num_runs': 3,
+            'num_laps': 1,
+            'timeout_seconds': 120,
+        }
+        r1 = self.client.post(url, data)
+        self.assertEqual(r1.status_code, 302, "First category creation should redirect")
+
+        data['name'] = 'Cat B'
+        r2 = self.client.post(url, data)
+        self.assertEqual(r2.status_code, 302, "Second category creation should redirect without token collision")
+
+        cats = Competition.objects.filter(contest=self.contest, name__in=['Cat A', 'Cat B'])
+        tokens = list(cats.values_list('token', flat=True))
+        self.assertEqual(len(tokens), 2)
+        self.assertEqual(len(set(tokens)), 2, "Each new category must get a distinct token")
+
 
 class RegistrationTest(TestCase):
     """Registration form creates inactive user with correct profile."""

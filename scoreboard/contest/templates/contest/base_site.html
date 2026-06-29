@@ -70,11 +70,12 @@
             {% if is_organiser %}
             <li><a class="dropdown-item" href="/contest/organise/">Organiser Dashboard</a></li>
             {% endif %}
-            {% if is_admin %}
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="/admin/">Django Admin</a></li>
-            {% endif %}
           </ul>
+        </li>
+        {% endif %}
+        {% if is_admin %}
+        <li class="nav-item">
+          <a class="nav-link" href="/admin/" style="color:var(--gold);font-weight:600;">&#9881; Admin</a>
         </li>
         {% endif %}
       </ul>

@@ -1,5 +1,10 @@
-{% extends "contest/base.html" %}
+{% extends "contest/organise/base_organise.html" %}
 {% block title %}<title>Confirm Delete — RoboSTEAM Academy</title>{% endblock %}
+{% block page_title %}Confirm Delete{% endblock %}
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{% url 'contest:organise_dashboard' %}">Organiser</a></li>
+<li class="breadcrumb-item active">Delete</li>
+{% endblock %}
 {% block content %}
 <div style="max-width:480px;">
   <div class="form-card text-center">

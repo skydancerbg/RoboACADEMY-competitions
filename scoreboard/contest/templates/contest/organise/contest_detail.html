@@ -1,5 +1,11 @@
-{% extends "contest/base.html" %}
+{% extends "contest/organise/base_organise.html" %}
 {% block title %}<title>{{ contest.name }} — Organiser — RoboSTEAM Academy</title>{% endblock %}
+{% block page_title %}{{ contest.name }}{% endblock %}
+{% block page_subtitle %}<div class="page-header-sub">{{ contest.get_status_display }}</div>{% endblock %}
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{% url 'contest:organise_dashboard' %}">Organiser</a></li>
+<li class="breadcrumb-item active">{{ contest.name }}</li>
+{% endblock %}
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
   <div>

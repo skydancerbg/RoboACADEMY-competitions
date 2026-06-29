@@ -517,3 +517,32 @@ a:hover {
   .navbar-robosteam .nav-link { color: #c8d8e4; padding: 0.5rem 1rem; }
   .navbar-robosteam .dropdown-item { color: #a8c0cc; }
 }
+
+/* ---------- Organiser page header ---------- */
+.page-header-organise {
+  background: var(--navy);
+  border-bottom: 3px solid var(--primary);
+  padding: 1.5rem 0 1.25rem;
+  margin-bottom: 2rem;
+}
+.page-header-organise .page-header-title {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+.page-header-organise .page-header-sub {
+  font-size: 0.82rem;
+  color: #8aabb6;
+  margin-top: 0.2rem;
+}
+.page-header-organise .breadcrumb {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  font-size: 0.82rem;
+}
+.page-header-organise .breadcrumb-item a { color: var(--primary); }
+.page-header-organise .breadcrumb-item.active { color: #8aabb6; }
+.page-header-organise .breadcrumb-item + .breadcrumb-item::before { color: #4a6070; }

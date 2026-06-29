@@ -1,0 +1,17 @@
+{% extends "contest/base.html" %}
+{% block title %}<title>Confirm Delete — RoboSTEAM Academy</title>{% endblock %}
+{% block content %}
+<div style="max-width:480px;">
+  <div class="form-card text-center">
+    <h4 style="font-family:'Poppins',sans-serif;">Delete {{ object }}?</h4>
+    <p style="color:#6b7a8d;">This action cannot be undone.</p>
+    <form method="post">
+      {% csrf_token %}
+      <div class="d-flex justify-content-center gap-3 mt-3">
+        <button type="submit" class="btn btn-danger">Yes, delete</button>
+        <a href="{{ back_url }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

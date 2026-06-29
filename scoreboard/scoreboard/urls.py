@@ -1,5 +1,8 @@
 from django.contrib import admin
 admin.site.site_url = '/contest/'   # "View Site" in admin header → judge competitions list
+admin.site.site_header  = 'RoboSTEAM Academy'
+admin.site.site_title   = 'RoboSTEAM Admin'
+admin.site.index_title  = 'Competition Management'
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static

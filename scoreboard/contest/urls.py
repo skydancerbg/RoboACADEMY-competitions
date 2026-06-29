@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import views, registration_views, organise_views
 
 app_name = 'contest'
 
@@ -17,4 +17,17 @@ urlpatterns = [
     path('run/<int:run_id>/score', views.run_score, name='run_score'),
     path('run/<int:run_id>/manual_entry', views.manual_entry, name='run_manual_entry'),
     path('robot_action', views.robot_action),
+    # Registration
+    path('register/',         registration_views.register,         name='register'),
+    path('register/pending/', registration_views.register_pending, name='register_pending'),
+    # Organiser interface
+    path('organise/',                                          organise_views.organise_dashboard,     name='organise_dashboard'),
+    path('organise/competition/new/',                          organise_views.organise_contest_new,   name='organise_contest_new'),
+    path('organise/competition/<int:contest_id>/',             organise_views.organise_contest,       name='organise_contest'),
+    path('organise/competition/<int:contest_id>/edit/',        organise_views.organise_contest_edit,  name='organise_contest_edit'),
+    path('organise/competition/<int:contest_id>/team/new/',    organise_views.organise_team_new,      name='organise_team_new'),
+    path('organise/team/<int:team_id>/edit/',                  organise_views.organise_team_edit,     name='organise_team_edit'),
+    path('organise/team/<int:team_id>/delete/',                organise_views.organise_team_delete,   name='organise_team_delete'),
+    path('organise/competition/<int:contest_id>/category/new/', organise_views.organise_category_new, name='organise_category_new'),
+    path('organise/category/<int:category_id>/edit/',          organise_views.organise_category_edit, name='organise_category_edit'),
 ]

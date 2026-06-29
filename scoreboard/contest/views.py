@@ -1,6 +1,8 @@
 import collections
 import json
+from functools import wraps
 
+from django.contrib.auth.decorators import login_required
 from django.core.exceptions import BadRequest, PermissionDenied, ValidationError
 from django.db.models import Max
 from django.http import Http404, JsonResponse
@@ -13,6 +15,17 @@ from .models import (
 )
 
 
+def organiser_required(view_func):
+    @login_required
+    @wraps(view_func)
+    def _wrapped(request, *args, **kwargs):
+        u = request.user
+        if u.is_superuser or u.groups.filter(name__in=['Organiser', 'Administrator']).exists():
+            return view_func(request, *args, **kwargs)
+        raise PermissionDenied
+    return _wrapped
+
+
 def index(request):
     contests = list(Contest.objects.all())
     active_contests = filter(lambda x: x.status == ItemStates.OPEN, contests)
@@ -23,6 +36,7 @@ def index(request):
     })
 
 
+@login_required
 def contest_competitions(request, contest_id):
     contest      = Contest.objects.get(pk=contest_id)
     competitions = Competition.objects.filter(contest_id=contest_id, status__in=['OPEN', 'CLOSED'])
@@ -61,6 +75,7 @@ def contest_competitions(request, contest_id):
     })
 
 
+@login_required
 def contest_team(request, team_id):
     team = Team.objects.get(pk=team_id)
     return render(request, 'contest/teams.html', {
@@ -70,6 +85,7 @@ def contest_team(request, team_id):
     })
 
 
+@login_required
 def competition_board(request, competition_id):
     try:
         competition = Competition.objects.get(pk=competition_id)
@@ -129,6 +145,7 @@ def _judged_preliminary(competition_id):
 
 # ── Judge run actions ──────────────────────────────────────────────────────────
 
+@login_required
 @require_POST
 def run_create(request, competition_id):
     """Create a PENDING run for a team."""
@@ -152,6 +169,7 @@ def run_create(request, competition_id):
     return redirect('contest:competition_board', competition_id=competition_id)
 
 
+@login_required
 @require_POST
 def run_start(request, run_id):
     """Activate a PENDING run. Publishes MQTT START for TIMED competitions only."""
@@ -174,6 +192,7 @@ def run_start(request, run_id):
     return JsonResponse({'status': 'started', 'run_id': run.id})
 
 
+@login_required
 @require_POST
 def run_stop(request, run_id):
     """Void an ACTIVE run. Publishes MQTT STOP for TIMED competitions only."""
@@ -195,6 +214,7 @@ def run_stop(request, run_id):
     return JsonResponse({'status': 'voided', 'run_id': run.id})
 
 
+@login_required
 @require_POST
 def run_score(request, run_id):
     """Submit a judge's score for a JUDGED run. Marks it COMPLETED and updates best result."""
@@ -222,8 +242,7 @@ def run_score(request, run_id):
     return redirect('contest:competition_board', competition_id=run.competition.id)
 
 
-
-
+@login_required
 @require_POST
 def manual_entry(request, run_id):
     """Submit a manually-measured result for a VOIDED run (MQTT fallback path)."""
@@ -301,6 +320,9 @@ def robot_action(request):
             response = 'not_running'
 
     return JsonResponse({'result': response})
+
+
+@login_required
 def contest_ranking(request, contest_id):
     from scoring.models import OverallResult
     contest = get_object_or_404(Contest, pk=contest_id)
@@ -314,6 +336,7 @@ def contest_ranking(request, contest_id):
         'contest': contest,
         'overall_results': overall_results,
     })
+
 
 def competition_board_fragment(request, competition_id):
     """

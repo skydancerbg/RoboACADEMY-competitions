@@ -66,8 +66,13 @@
           </a>
           <ul class="dropdown-menu">
             <li><a class="dropdown-item" href="/contest/">Competitions</a></li>
+            {% if is_organiser %}
+            <li><a class="dropdown-item" href="/contest/organise/">Organiser Dashboard</a></li>
+            {% endif %}
+            {% if is_admin %}
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="/admin/">Django Admin</a></li>
+            {% endif %}
           </ul>
         </li>
         {% endif %}
@@ -79,6 +84,7 @@
           <a href="/accounts/logout/" class="btn-judge-login">Logout</a>
         {% else %}
           <a href="/accounts/login/" class="btn-judge-login">Judge Login</a>
+          <a href="/contest/register/" style="font-size:12px;color:#8aabb6;text-decoration:none;margin-left:4px;">Request account</a>
         {% endif %}
       </div>
     </div>

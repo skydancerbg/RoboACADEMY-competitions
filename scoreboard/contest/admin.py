@@ -1,7 +1,10 @@
 from django.contrib import admin
-from .models import Run, Competition, Contest, Result, Team
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.contrib.auth.models import User, Group
 from django.forms import TextInput, Textarea, NumberInput
 import django.db
+
+from .models import Run, Competition, Contest, Result, Team, UserProfile
 
 
 class Admin(admin.ModelAdmin):
@@ -48,5 +51,51 @@ class ContestAdmin(Admin):
     inlines      = [TeamInline]
 
 
+# ── User management with approval workflow ────────────────────────────────────
+
+class UserProfileInline(admin.StackedInline):
+    model = UserProfile
+    can_delete = False
+    verbose_name_plural = 'Profile'
+    extra = 0
+
+
+class UserAdmin(BaseUserAdmin):
+    inlines = (UserProfileInline,)
+    list_display  = ('username', 'email', 'first_name', 'last_name', 'is_active',
+                     'get_requested_role', 'get_groups')
+    list_filter   = ('is_active', 'groups')
+    actions       = ['approve_users']
+
+    def get_requested_role(self, obj):
+        try:
+            return obj.profile.requested_role
+        except UserProfile.DoesNotExist:
+            return '—'
+    get_requested_role.short_description = 'Requested role'
+
+    def get_groups(self, obj):
+        return ', '.join(obj.groups.values_list('name', flat=True)) or '—'
+    get_groups.short_description = 'Groups'
+
+    @admin.action(description='Approve selected users (activate + assign to requested group)')
+    def approve_users(self, request, queryset):
+        approved = 0
+        for user in queryset:
+            user.is_active = True
+            user.save(update_fields=['is_active'])
+            try:
+                role  = user.profile.requested_role
+                group = Group.objects.get(name=role.capitalize())
+                user.groups.add(group)
+            except (UserProfile.DoesNotExist, Group.DoesNotExist):
+                pass
+            approved += 1
+        self.message_user(request, f'{approved} user(s) approved and activated.')
+
+
+admin.site.unregister(User)
+admin.site.register(User, UserAdmin)
+admin.site.register(UserProfile)
 admin.site.register(Contest, ContestAdmin)
 admin.site.register(Competition, CompetitionAdmin)

@@ -140,3 +140,19 @@ class Run(models.Model):
 
     def __str__(self):
         return 'Run:{}@{}'.format(self.start_time, self.team.name)
+
+
+class UserProfile(models.Model):
+    ROLE_CHOICES = [
+        ('judge',     'Judge'),
+        ('organiser', 'Organiser'),
+    ]
+    user           = models.OneToOneField(
+        'auth.User', on_delete=models.CASCADE, related_name='profile'
+    )
+    requested_role = models.CharField(max_length=16, choices=ROLE_CHOICES, default='judge')
+    organisation   = models.CharField(max_length=200, blank=True)
+    country        = models.CharField(max_length=100, blank=True)
+
+    def __str__(self):
+        return f'Profile({self.user.username})'

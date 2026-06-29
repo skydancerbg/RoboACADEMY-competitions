@@ -68,6 +68,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "contest.context_processors.user_roles",
             ],
         },
     },
@@ -124,6 +125,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/contest/'
+LOGOUT_REDIRECT_URL = '/'
 
 MQTT_BROKER_HOST = env('MQTT_BROKER_HOST', default='10.15.20.11')
 MQTT_BROKER_PORT = env.int('MQTT_BROKER_PORT', default=51883)

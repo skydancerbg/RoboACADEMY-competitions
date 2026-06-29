@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.contrib.auth.models import User
 from django.test import Client, TestCase
 from django.utils import timezone
 
@@ -363,6 +364,8 @@ class JudgedScoringSignalIntegrationTest(TestCase):
     def setUp(self):
         import secrets
         self.client = Client()
+        self.user, _ = User.objects.get_or_create(username='testjudge_judged')
+        self.client.force_login(self.user)
         self.contest = make_contest()
         self.competition = Competition.objects.create(
             name='Judged Cat', contest=self.contest,
@@ -1103,6 +1106,8 @@ class ManualEntryViewTest(TestCase):
             token=_secrets.token_hex(8),
         )
         self.team = Team.objects.create(name='Alpha View', contest=self.contest, token=None)
+        self.user, _ = User.objects.get_or_create(username='testjudge_manual')
+        self.client.force_login(self.user)
 
     def _voided_run(self, comp):
         return Run.objects.create(

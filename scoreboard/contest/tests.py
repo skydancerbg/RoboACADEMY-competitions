@@ -1,6 +1,7 @@
 import json
 import secrets
 
+from django.contrib.auth.models import User
 from django.test import Client, TestCase
 
 from contest.models import (
@@ -43,6 +44,14 @@ def _make_pending_run(team, comp):
     )
 
 
+def _judge_user():
+    """Create a test judge user (or get existing one)."""
+    u, _ = User.objects.get_or_create(username='testjudge')
+    u.set_password('test')
+    u.save()
+    return u
+
+
 # ── BUG-01 regression ─────────────────────────────────────────────────────────
 
 class BUG01ContestTableTimedOpenTest(TestCase):
@@ -50,6 +59,8 @@ class BUG01ContestTableTimedOpenTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.user = _judge_user()
+        self.client.force_login(self.user)
         self.contest, self.comp, self.team = _make_setup(
             status=ItemStates.OPEN, ctype=CompetitionType.TIMED
         )
@@ -73,6 +84,8 @@ class BUG01ContestTableJudgedOpenTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.user = _judge_user()
+        self.client.force_login(self.user)
         self.contest, self.comp, self.team = _make_setup(
             status=ItemStates.OPEN, ctype=CompetitionType.JUDGED
         )
@@ -91,6 +104,8 @@ class BUG02RunCreateStatusGuardTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.user = _judge_user()
+        self.client.force_login(self.user)
 
     def test_run_create_open_competition_succeeds(self):
         _, comp, team = _make_setup(status=ItemStates.OPEN)
@@ -160,6 +175,8 @@ class RunScoreValidationTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.user = _judge_user()
+        self.client.force_login(self.user)
         _, self.judged_comp, self.team = _make_setup(
             status=ItemStates.OPEN, ctype=CompetitionType.JUDGED
         )

@@ -59,11 +59,22 @@
             <li><a class="dropdown-item" href="/pages/video-scoreboard/">Video &ndash; Scoreboard</a></li>
           </ul>
         </li>
+        {% if user.is_authenticated %}
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+            <span style="color:#2d8fa5;">&#9654; Judge Panel</span>
+          </a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="/contest/">Competitions</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="/admin/">Django Admin</a></li>
+          </ul>
+        </li>
+        {% endif %}
       </ul>
       <div class="d-flex align-items-center gap-3">
         <img src="{% static 'contest/img/erasmus-logo.png' %}?v=3" alt="Co-funded by Erasmus+" class="erasmus-logo d-none d-lg-block">
         {% if user.is_authenticated %}
-          {% if user.is_staff %}<a href="/admin/" style="font-size:13px;color:#8aabb6;text-decoration:none;">Admin</a>{% endif %}
           <span style="font-size:13px;color:#8aabb6;">{{ user.username }}</span>
           <a href="/accounts/logout/" class="btn-judge-login">Logout</a>
         {% else %}

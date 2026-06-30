@@ -1,3 +1,4 @@
+import uuid
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
 
@@ -51,7 +52,7 @@ def participate_join(request, contest_id):
 
     # Idempotent — do nothing if already registered
     if not ContestRegistration.objects.filter(user=request.user, contest=contest).exists():
-        team = Team.objects.create(name=team_name, contest=contest)
+        team = Team.objects.create(name=team_name, contest=contest, token=uuid.uuid4().hex)
         ContestRegistration.objects.create(
             user=request.user, contest=contest, team=team
         )
